@@ -2,8 +2,8 @@ import type { Env } from '../../env.js';
 import { MockGoogleAdsClient } from './mock.js';
 import type { GoogleAdsClient } from './types.js';
 
-// Factory: returns the mock client during Phase 0. Phase 1 will branch on
-// an env flag and return a real OAuth-backed client.
+// Phase 1: flag-gated. 'true' → mock, anything else → real client (landed in
+// the next commit). Keeping the real branch out of the tree until it exists.
 export function createGoogleAdsClient(_env: Env): GoogleAdsClient {
   return new MockGoogleAdsClient();
 }

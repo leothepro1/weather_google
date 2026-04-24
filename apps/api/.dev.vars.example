@@ -8,6 +8,12 @@
 
 ADMIN_TOKEN=dev-token
 
+# 'true' to bypass the real Google Ads client entirely. Default for local
+# dev until the operator has connected their Google Ads account via OAuth.
+USE_MOCK_GOOGLE_ADS=true
+
+WEB_ORIGIN=http://localhost:3000
+
 GOOGLE_ADS_DEVELOPER_TOKEN=
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=

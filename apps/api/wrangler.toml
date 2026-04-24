@@ -8,6 +8,11 @@ compatibility_flags = ["nodejs_compat"]
 WEATHER_LAT = "59.3293"
 WEATHER_LON = "18.0686"
 APP_VERSION = "0.0.0"
+# Flip to "true" to keep running against the mock client in production (not
+# recommended). Unset / any other value routes to the real Google Ads client.
+USE_MOCK_GOOGLE_ADS = ""
+# Web origin allowed by CORS. Override per-environment.
+WEB_ORIGIN = "http://localhost:3000"
 
 # D1 binding. Create the DB with `wrangler d1 create wbm` then paste
 # the returned database_id below.
