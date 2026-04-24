@@ -1,11 +1,14 @@
 import type { Env } from '../../env.js';
 import { MockGoogleAdsClient } from './mock.js';
+import { RealGoogleAdsClient } from './real.js';
 import type { GoogleAdsClient } from './types.js';
 
-// Phase 1: flag-gated. 'true' → mock, anything else → real client (landed in
-// the next commit). Keeping the real branch out of the tree until it exists.
-export function createGoogleAdsClient(_env: Env): GoogleAdsClient {
-  return new MockGoogleAdsClient();
+export function createGoogleAdsClient(env: Env): GoogleAdsClient {
+  if (env.USE_MOCK_GOOGLE_ADS === 'true') {
+    return new MockGoogleAdsClient();
+  }
+  return new RealGoogleAdsClient(env);
 }
 
-export type { GoogleAdsClient, GoogleAdsCampaign } from './types.js';
+export { NotConnectedError } from './errors.js';
+export type { GoogleAdsCampaign, GoogleAdsClient } from './types.js';
