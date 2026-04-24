@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import type { AppBindings, Env } from './env.js';
 import { requireAdminToken } from './middleware/auth.js';
+import { authRoute } from './routes/auth.js';
+import { campaignsRoute } from './routes/campaigns.js';
+import { connectionRoute } from './routes/connection.js';
 import { healthRoute } from './routes/health.js';
 import { createGoogleAdsClient } from './services/googleAds/index.js';
 import type { GoogleAdsClient } from './services/googleAds/index.js';
@@ -12,7 +16,6 @@ export interface AppDeps {
   weather?: WeatherClient;
 }
 
-// Factory so tests can inject fakes. Prod wiring lives in `fetch` below.
 export function createApp(deps: AppDeps = {}) {
   const app = new Hono<AppBindings>();
 
@@ -22,13 +25,26 @@ export function createApp(deps: AppDeps = {}) {
     await next();
   });
 
-  app.route('/health', healthRoute);
+  // CORS for browser-facing /api/* — must come before auth so preflight
+  // OPTIONS requests (which don't carry Authorization) succeed.
+  app.use('/api/*', (c, next) =>
+    cors({
+      origin: c.env.WEB_ORIGIN,
+      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Authorization', 'Content-Type'],
+    })(c, next),
+  );
 
+  // Public endpoints first.
+  app.route('/health', healthRoute);
+  // /auth/google/start is self-authed via ?token=; /callback is state-authed.
+  app.route('/auth/google', authRoute);
+
+  // Admin bearer gate applies to everything below.
   app.use('*', requireAdminToken);
 
-  // Future phases mount their routers here:
-  //   app.route('/campaigns', campaignsRoute);
-  //   app.route('/buckets', bucketsRoute);
+  app.route('/api/connection', connectionRoute);
+  app.route('/api/campaigns', campaignsRoute);
 
   app.notFound((c) => c.json({ error: 'not_found' }, 404));
   app.onError((err, c) => {
