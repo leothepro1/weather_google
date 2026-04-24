@@ -63,14 +63,23 @@ export const authRoute = new Hono<AppBindings>()
     }
 
     await storeRefreshToken(c.env.DB, tokens.refresh_token, Date.now());
-    return c.html(callbackPage('Connected — redirecting to the dashboard…', { ok: true }));
+    return c.html(
+      callbackPage('Connected — redirecting to the dashboard…', {
+        ok: true,
+        redirectTo: c.env.WEB_ORIGIN,
+      }),
+    );
   });
 
-function callbackPage(message: string, opts: { ok?: boolean } = {}): string {
+function callbackPage(
+  message: string,
+  opts: { ok?: boolean; redirectTo?: string } = {},
+): string {
   const color = opts.ok ? '#16a34a' : '#dc2626';
-  const refresh = opts.ok
-    ? '<meta http-equiv="refresh" content="2;url=/" />'
-    : '';
+  const refresh =
+    opts.ok && opts.redirectTo
+      ? `<meta http-equiv="refresh" content="2;url=${escapeHtml(opts.redirectTo)}" />`
+      : '';
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Google Ads connection</title>${refresh}
 <style>body{font-family:system-ui;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}

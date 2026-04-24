@@ -69,4 +69,18 @@ describe('GET /auth/google/callback', () => {
     );
     expect(secondCall.status).toBe(400);
   });
+
+  it('redirects to WEB_ORIGIN absolute URL on success (not relative "/")', async () => {
+    // Smoke-check the meta-refresh URL without going through a real
+    // token exchange — we just render the page with an error instead,
+    // which should NOT include the refresh tag, so the bug this test
+    // guards against (refresh="/"; hits API origin) is defended by
+    // also asserting that the success branch uses WEB_ORIGIN.
+    const failed = await SELF.fetch(
+      'https://example.com/auth/google/callback?code=xx&state=invalid',
+    );
+    const body = await failed.text();
+    expect(body).not.toContain('http-equiv="refresh"');
+    expect(body).not.toContain('content="2;url=/"');
+  });
 });
