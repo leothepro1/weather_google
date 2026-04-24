@@ -42,7 +42,7 @@ describe('RealGoogleAdsClient.listCampaigns', () => {
         body: { access_token: 'acc-1', expires_in: 3600, token_type: 'Bearer' },
       },
       {
-        url: /googleads\.googleapis\.com\/v24\/customers\/.+\/googleAds:search/,
+        url: /googleads\.googleapis\.com\/v23\/customers\/.+\/googleAds:search/,
         body: {
           results: [
             {

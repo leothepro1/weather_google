@@ -3,7 +3,7 @@ import { NotConnectedError } from './errors.js';
 import { getAccessToken, requireRefreshToken } from './oauth.js';
 import type { GoogleAdsCampaign, GoogleAdsClient } from './types.js';
 
-const API_VERSION = 'v24';
+const API_VERSION = 'v23';
 const BASE_URL = `https://googleads.googleapis.com/${API_VERSION}`;
 
 const LIST_CAMPAIGNS_GAQL = `

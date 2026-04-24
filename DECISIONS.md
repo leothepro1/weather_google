@@ -76,13 +76,14 @@ real Google Ads OAuth dance, and gives us a ready-made seam for tests.
 
 ## Phase 1 decisions
 
-## 11. Google Ads API v24, accessed via `fetch` (no SDK)
+## 11. Google Ads API v23 (specifically v23.2), accessed via `fetch` (no SDK)
 
 The official Google Ads client library is Node-first and has repeatedly
 broken under Workers' runtime constraints. We call the REST endpoint at
-`https://googleads.googleapis.com/v24/...` directly. v24 is the current
-stable line (released 2026-04-22). If a v24-specific issue surfaces, v23.2
-is a drop-in fallback — only the path segment changes.
+`https://googleads.googleapis.com/v23/...` directly. v23 is pinned (not
+the newer v24 released 2026-04-22) because v23.2 has two patch releases
+of bake time behind it; v24 does not. The path segment is a single
+constant in `real.ts` — bumping is a one-line change when we want it.
 
 ## 12. Refresh token stored in D1 `config`, one-time OAuth
 
