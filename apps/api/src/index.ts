@@ -25,9 +25,12 @@ export function createApp(deps: AppDeps = {}) {
     await next();
   });
 
-  // CORS for browser-facing /api/* — must come before auth so preflight
-  // OPTIONS requests (which don't carry Authorization) succeed.
-  app.use('/api/*', (c, next) =>
+  // CORS applies to every browser-reachable route — /api/* AND /health
+  // (the dashboard pings /health to verify the admin token). Must come
+  // before auth so preflight OPTIONS requests succeed without Authorization.
+  // Navigation-only endpoints (/auth/google/*) don't hit CORS from fetch,
+  // so the extra headers on them are harmless.
+  app.use('*', (c, next) =>
     cors({
       origin: c.env.WEB_ORIGIN,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
