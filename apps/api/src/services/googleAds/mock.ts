@@ -1,5 +1,7 @@
 import type { GoogleAdsCampaign, GoogleAdsClient } from './types.js';
 
+const MOCK_CUSTOMER = '1234567890';
+
 const FIXTURES: GoogleAdsCampaign[] = [
   {
     id: 'mock-1001',
@@ -7,6 +9,7 @@ const FIXTURES: GoogleAdsCampaign[] = [
     dailyBudgetMicros: 25_000_000,
     currencyCode: 'SEK',
     status: 'ENABLED',
+    budgetResourceId: `customers/${MOCK_CUSTOMER}/campaignBudgets/B0001`,
   },
   {
     id: 'mock-1002',
@@ -14,6 +17,7 @@ const FIXTURES: GoogleAdsCampaign[] = [
     dailyBudgetMicros: 120_000_000,
     currencyCode: 'SEK',
     status: 'ENABLED',
+    budgetResourceId: `customers/${MOCK_CUSTOMER}/campaignBudgets/B0002`,
   },
   {
     id: 'mock-1003',
@@ -21,6 +25,7 @@ const FIXTURES: GoogleAdsCampaign[] = [
     dailyBudgetMicros: 8_500_000,
     currencyCode: 'SEK',
     status: 'PAUSED',
+    budgetResourceId: `customers/${MOCK_CUSTOMER}/campaignBudgets/B0003`,
   },
 ];
 
