@@ -19,7 +19,6 @@ export function Login() {
         onSubmit={submit}
         className="w-full max-w-sm space-y-4 rounded-lg bg-white p-6 shadow"
       >
-        <h1 className="text-xl font-semibold">Weather Budget Modifier</h1>
         <label className="block text-sm font-medium">
           Admin token
           <input

@@ -37,8 +37,7 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b bg-white px-6 py-4 shadow-sm">
-        <h1 className="text-lg font-semibold">Weather Budget Modifier</h1>
+      <header className="flex items-center justify-end border-b bg-white px-6 py-4 shadow-sm">
         <button
           onClick={logout}
           className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100"
