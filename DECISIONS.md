@@ -73,3 +73,14 @@ Every route and service speaks to `GoogleAdsClient` (an interface). Phase 0
 ships a mock that returns three fake campaigns and logs budget updates to the
 console. This unblocks the entire UI + cron pipeline before we deal with the
 real Google Ads OAuth dance, and gives us a ready-made seam for tests.
+
+## 10. ESLint v9 with flat config
+
+We use ESLint v9 and the flat config format (`eslint.config.mjs` at the repo
+root) rather than legacy `.eslintrc`. v9 is the current supported line — v8
+is EOL. Flat config is the only format v9 accepts without a compat shim, and
+every plugin we need (`typescript-eslint`, `eslint-plugin-react`,
+`eslint-plugin-react-hooks`, `eslint-config-prettier`) supports it natively at
+the versions we pin, so there's no reason to stay on the legacy format. One
+file at the root covers the whole monorepo; per-app overrides live in the same
+file as targeted entries.
