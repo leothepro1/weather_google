@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BucketInputSchema, WeatherConditionSchema } from './schemas.js';
+import {
+  BucketInputSchema,
+  ConnectionStatusSchema,
+  GoogleAdsCampaignViewSchema,
+  WeatherConditionSchema,
+} from './schemas.js';
 
 describe('WeatherConditionSchema', () => {
   it('accepts the six canonical conditions', () => {
@@ -32,5 +37,37 @@ describe('BucketInputSchema', () => {
         modifierPct: 0,
       }),
     ).toThrow();
+  });
+});
+
+describe('GoogleAdsCampaignViewSchema', () => {
+  it('accepts a row with optional budgetResourceId', () => {
+    const row = GoogleAdsCampaignViewSchema.parse({
+      id: '1001',
+      name: 'Spring Sale',
+      dailyBudgetMicros: 25_000_000,
+      currencyCode: 'SEK',
+      status: 'ENABLED',
+      budgetResourceId: 'customers/1234567890/campaignBudgets/B0001',
+    });
+    expect(row.budgetResourceId).toMatch(/campaignBudgets/);
+  });
+
+  it('rejects unknown status values', () => {
+    expect(() =>
+      GoogleAdsCampaignViewSchema.parse({
+        id: '1',
+        name: 'x',
+        dailyBudgetMicros: 0,
+        currencyCode: 'SEK',
+        status: 'DRAFT',
+      }),
+    ).toThrow();
+  });
+});
+
+describe('ConnectionStatusSchema', () => {
+  it('accepts the disconnected shape without customerId', () => {
+    expect(ConnectionStatusSchema.parse({ connected: false })).toEqual({ connected: false });
   });
 });

@@ -64,6 +64,30 @@ export const WeatherSnapshotSchema = z.object({
   location: z.string().min(1),
 });
 
+// ---- Google Ads service layer ----------------------------------------
+// Shape returned by the /api/campaigns endpoint (one row per campaign).
+// Distinct from the DB `CampaignSchema` which represents our local link row.
+
+export const GoogleAdsCampaignStatusSchema = z.enum(['ENABLED', 'PAUSED', 'REMOVED']);
+
+export const GoogleAdsCampaignViewSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  dailyBudgetMicros: z.number().int().nonnegative(),
+  currencyCode: z.string().length(3),
+  status: GoogleAdsCampaignStatusSchema,
+  budgetResourceId: z.string().min(1).optional(),
+});
+
+export const CampaignListResponseSchema = z.object({
+  campaigns: z.array(GoogleAdsCampaignViewSchema),
+});
+
+export const ConnectionStatusSchema = z.object({
+  connected: z.boolean(),
+  customerId: z.string().optional(),
+});
+
 export const AdjustmentLogSchema = z.object({
   id: z.number().int().positive(),
   ts: epochMs,
