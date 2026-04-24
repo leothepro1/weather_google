@@ -41,7 +41,7 @@ migrations/   D1 SQL migrations
 
 ## Prerequisites
 
-- Node.js **20+**
+- Node.js **22 LTS** (pinned in `.nvmrc`; run `nvm use` to match)
 - pnpm **10.x** (`corepack enable` will pick up the version from `package.json`)
 - A Cloudflare account if you want to run the Worker locally against real D1
   — otherwise `wrangler dev` works with a local SQLite shim
