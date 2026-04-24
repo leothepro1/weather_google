@@ -14,9 +14,10 @@ this repo.
 
 ## Status
 
-**Phase 0 — Foundations.** Scaffolding only; no business features yet. The
-API exposes `/health`; the web app has login + empty dashboard. CI typechecks,
-lints, and tests all workspaces.
+**Phase 1 — Google Ads OAuth + read-only campaign listing.** The dashboard
+can connect a Google Ads account via a one-time OAuth flow, list campaigns
+read-only, and disconnect (revoking the refresh token). Budget mutations
+are not implemented yet — the real client throws on any `update…` call.
 
 ## Stack
 
@@ -77,11 +78,38 @@ pnpm exec wrangler d1 migrations apply wbm --remote
 
 ```bash
 # Local:
-echo 'ADMIN_TOKEN=dev-token' > apps/api/.dev.vars
+cp apps/api/.dev.vars.example apps/api/.dev.vars
+#   ... then fill in real values; at minimum set ADMIN_TOKEN.
 
 # Remote:
 pnpm exec wrangler secret put ADMIN_TOKEN
 ```
+
+### One-time Google Ads OAuth setup
+
+Phase 1 runs against the real Google Ads API. To connect:
+
+1. **GCP console** → pick a project (or create one) → **APIs & Services →
+   Credentials** → **Create OAuth client ID** → type *Web application*.
+   Add redirect URIs for every environment you run in, e.g.
+   `http://localhost:8787/auth/google/callback` for local dev.
+2. **Enable the Google Ads API** on the same project.
+3. **Apply for a Google Ads developer token** (MCC → Tools → API Center).
+   Basic Access tier is enough for this tool.
+4. Fill in `apps/api/.dev.vars` (gitignored) with:
+   - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` from step 1
+   - `GOOGLE_OAUTH_REDIRECT_URI` matching one of the URIs you registered
+   - `GOOGLE_ADS_DEVELOPER_TOKEN` from step 3
+   - `GOOGLE_ADS_LOGIN_CUSTOMER_ID` — your MCC customer ID, digits only
+   - `GOOGLE_ADS_CUSTOMER_ID` — the advertiser account this tool manages
+   - `USE_MOCK_GOOGLE_ADS=true` to keep using fake data; unset for real
+5. Start both dev servers (see next section), open the dashboard, click
+   **Connect Google Ads**. The callback stores a refresh token in D1
+   under `config.google_refresh_token`. From then on the tool uses it.
+
+In production, push each secret with `wrangler secret put <NAME>`, and
+the non-secret ones (client ID, customer IDs, redirect URI) can go in
+`wrangler.toml` `[vars]` or also as secrets — your call.
 
 ## Running locally
 
@@ -114,13 +142,20 @@ All from the repo root:
 
 See [`.env.example`](./.env.example) for the authoritative list. Summary:
 
-| Name           | Where             | Purpose                               |
-| -------------- | ----------------- | ------------------------------------- |
-| `ADMIN_TOKEN`  | Worker secret     | Bearer token for all API routes       |
-| `WEATHER_LAT`  | Worker var        | Fixed latitude for weather lookup     |
-| `WEATHER_LON`  | Worker var        | Fixed longitude for weather lookup    |
-| `APP_VERSION`  | Worker var        | Surfaced on `/health`                 |
-| `VITE_API_URL` | Web build-time    | Base URL the browser uses for the API |
+| Name                           | Where          | Purpose                                          |
+| ------------------------------ | -------------- | ------------------------------------------------ |
+| `ADMIN_TOKEN`                  | Worker secret  | Bearer token for all API routes                  |
+| `WEATHER_LAT` / `WEATHER_LON`  | Worker var     | Fixed location for weather lookup                |
+| `APP_VERSION`                  | Worker var     | Surfaced on `/health`                            |
+| `WEB_ORIGIN`                   | Worker var     | Web origin allowed by CORS (e.g. `:3000`)        |
+| `USE_MOCK_GOOGLE_ADS`          | Worker var     | `"true"` → MockGoogleAdsClient; else real client |
+| `GOOGLE_ADS_DEVELOPER_TOKEN`   | Worker secret  | Google Ads API developer token                   |
+| `GOOGLE_OAUTH_CLIENT_ID`       | Worker var     | OAuth 2.0 client ID                              |
+| `GOOGLE_OAUTH_CLIENT_SECRET`   | Worker secret  | OAuth 2.0 client secret                          |
+| `GOOGLE_OAUTH_REDIRECT_URI`    | Worker var     | Must match a URI registered in GCP               |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Worker var     | MCC customer ID (login-customer-id header)       |
+| `GOOGLE_ADS_CUSTOMER_ID`       | Worker var     | Advertiser account this tool manages             |
+| `VITE_API_URL`                 | Web build-time | Base URL the browser uses for the API            |
 
 ## Tests
 
