@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["ES2022"],
+    "types": [
+      "@cloudflare/workers-types",
+      "@cloudflare/vitest-pool-workers",
+      "vitest/globals"
+    ],
+    "paths": {
+      "@wbm/shared": ["../../packages/shared/src/index.ts"],
+      "@wbm/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["src/**/*", "vitest.config.ts"]
+}

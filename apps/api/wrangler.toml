@@ -1,0 +1,22 @@
+name = "wbm-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# Non-secret config. Secrets (ADMIN_TOKEN) go via `wrangler secret put`.
+[vars]
+WEATHER_LAT = "59.3293"
+WEATHER_LON = "18.0686"
+APP_VERSION = "0.0.0"
+
+# D1 binding. Create the DB with `wrangler d1 create wbm` then paste
+# the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "wbm"
+database_id = "YOUR_D1_DATABASE_ID"
+migrations_dir = "../../migrations"
+
+# Daily cron (02:00 UTC) — wired to a scheduled handler in a later phase.
+# [triggers]
+# crons = ["0 2 * * *"]
