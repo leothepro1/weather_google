@@ -72,54 +72,9 @@ add the real Google Ads client in Phase 1, without rewriting call sites.
 Every route and service speaks to `GoogleAdsClient` (an interface). Phase 0
 ships a mock that returns three fake campaigns and logs budget updates to the
 console. This unblocks the entire UI + cron pipeline before we deal with the
-real Google Ads OAuth dance, and gives us a ready-made seam for tests.
-
-## Phase 1 decisions
-
-## 11. Google Ads API v23 (specifically v23.2), accessed via `fetch` (no SDK)
-
-The official Google Ads client library is Node-first and has repeatedly
-broken under Workers' runtime constraints. We call the REST endpoint at
-`https://googleads.googleapis.com/v23/...` directly. v23 is pinned (not
-the newer v24 released 2026-04-22) because v23.2 has two patch releases
-of bake time behind it; v24 does not. The path segment is a single
-constant in `real.ts` — bumping is a one-line change when we want it.
-
-## 12. Refresh token stored in D1 `config`, one-time OAuth
-
-Single-user tool, one advertiser. The operator goes through OAuth once
-via `GET /auth/google/start`; the refresh token lands in
-`config.google_refresh_token`. Subsequent runs exchange it for an access
-token as needed. Access tokens are cached in-memory per Worker isolate
-with a 60-second skew — cold isolates refresh.
-
-## 13. OAuth state in D1 `config`, 10-minute TTL
-
-Rather than HMAC-sign state (which would add a new env secret), we write
-a random 32-byte token to `config` under `oauth_state:<token>` with the
-issue timestamp. `/callback` deletes the row on read and rejects it if
-older than 10 minutes. Trivial volume — one INSERT/DELETE per OAuth start.
-
-## 14. `GET /auth/google/start` accepts `?token=<ADMIN_TOKEN>`
-
-Browser navigations can't carry an `Authorization` header, so the one
-OAuth-kickoff route takes the admin token as a query parameter. The
-referrer to `accounts.google.com` is stripped, so the token doesn't leak
-downstream. If this project ever grows beyond a single operator, replace
-with a cookie session.
-
-## 15. Read-only in Phase 1 with a runtime mutate guard
-
-`RealGoogleAdsClient.updateCampaignDailyBudget` throws
-`"Mutations disabled in Phase 1"` unconditionally. The guard is removed
-in Phase 3 when budget mutations ship. Keeping it as code rather than a
-TODO ensures a code path change is required to introduce the first write.
-
-## 16. `USE_MOCK_GOOGLE_ADS` flag for the client factory
-
-`"true"` returns `MockGoogleAdsClient`; anything else returns the real
-client. Defaults to `"true"` in `.dev.vars.example` so local dev works
-without real credentials and to `""` in production `wrangler.toml`.
+real Google Ads OAuth dance, and gives us a ready-made seam for tests. Phase 1
+added `USE_MOCK_GOOGLE_ADS` as the factory toggle — `"true"` keeps the mock
+in play, anything else routes to the real client.
 
 ## 10. ESLint v9 with flat config
 
@@ -131,3 +86,39 @@ every plugin we need (`typescript-eslint`, `eslint-plugin-react`,
 the versions we pin, so there's no reason to stay on the legacy format. One
 file at the root covers the whole monorepo; per-app overrides live in the same
 file as targeted entries.
+
+## 11. Google Ads API v23 (specifically v23.2), accessed via `fetch` (no SDK)
+
+The official Google Ads client library is Node-first and has repeatedly
+broken under Workers' runtime constraints. We call the REST endpoint at
+`https://googleads.googleapis.com/v23/...` directly. v23 is pinned (not
+the newer v24 released 2026-04-22) because v23.2 has two patch releases
+of bake time behind it; v24 does not. The path segment is a single
+constant in `real.ts` — bumping is a one-line change when we want it.
+
+## 12. OAuth: state and refresh token both stored in D1 `config`
+
+**State.** Rather than HMAC-sign state (which would add a new
+`OAUTH_STATE_SECRET` env var), we write a random 32-byte token to `config`
+under `oauth_state:<token>` with the issue timestamp. `/callback` deletes the
+row on read and rejects it if older than 10 minutes. Trivial volume — one
+INSERT/DELETE per OAuth start.
+
+**Refresh token.** Single-user tool, one advertiser, so one refresh token
+lives under `config.google_refresh_token`. Operator goes through OAuth once
+via `/auth/google/start`; subsequent calls exchange the stored refresh token
+for an access token as needed, cached per Worker isolate with a 60-second
+skew (cold isolates refresh, acceptable).
+
+## 13. `GET /auth/google/start` accepts `?token=<ADMIN_TOKEN>`
+
+Browser navigations can't carry an `Authorization` header, so the one
+OAuth-kickoff route takes the admin token as a query parameter. The
+referrer to `accounts.google.com` is stripped, so the token doesn't leak
+downstream. If this project ever grows beyond a single operator, replace
+with a cookie session.
+
+## Process notes
+
+Architect and Claude Code both use explicit **Deviations from spec** headings
+in plans; approval requires a visible Yes/No signal on each.

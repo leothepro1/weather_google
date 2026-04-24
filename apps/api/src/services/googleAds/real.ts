@@ -69,7 +69,9 @@ export class RealGoogleAdsClient implements GoogleAdsClient {
   }
 
   async updateCampaignDailyBudget(_campaignId: string, _amountMicros: number): Promise<void> {
-    // Defensive guard — removed in Phase 3 when mutations ship.
+    // Phase 1 is read-only. Keeping the guard as code — not a TODO — means
+    // enabling the first real write requires a code path change, not just
+    // a comment being removed. Lifted in Phase 3 when budget mutations ship.
     throw new Error('Mutations disabled in Phase 1');
   }
 
