@@ -23,11 +23,10 @@ export function ConnectionPanel({ onStatusChange }: Props) {
     try {
       const status = await getConnectionStatus();
       setState({ kind: 'ready', status });
-      onStatusChange?.(status);
     } catch (e) {
       setState({ kind: 'error', message: e instanceof Error ? e.message : 'unknown error' });
     }
-  }, [onStatusChange]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -40,8 +39,9 @@ export function ConnectionPanel({ onStatusChange }: Props) {
   const disconnect = async () => {
     setBusy(true);
     try {
-      await disconnectGoogleAds();
-      await refresh();
+      const status = await disconnectGoogleAds();
+      setState({ kind: 'ready', status });
+      onStatusChange?.(status);
     } catch (e) {
       setState({ kind: 'error', message: e instanceof Error ? e.message : 'unknown error' });
     } finally {
