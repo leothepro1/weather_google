@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ApiError, getHealth, type HealthResponse } from '../lib/api.js';
+import { CampaignsTable } from '../components/CampaignsTable.js';
+import { ConnectionPanel } from '../components/ConnectionPanel.js';
+import { ApiError, getHealth } from '../lib/api.js';
 import { clearToken } from '../lib/auth.js';
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [tokenValid, setTokenValid] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     getHealth()
-      .then((h) => {
-        if (!cancelled) setHealth(h);
+      .then(() => {
+        if (!cancelled) setTokenValid(true);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -43,15 +46,13 @@ export function Dashboard() {
           Log out
         </button>
       </header>
-      <main className="p-6">
-        {error ? (
-          <p className="text-red-600">API error: {error}</p>
-        ) : health ? (
-          <p className="text-sm text-slate-600">
-            API ok — version <code className="font-mono">{health.version}</code>
-          </p>
-        ) : (
-          <p className="text-sm text-slate-500">Checking API…</p>
+      <main className="mx-auto max-w-4xl space-y-4 p-6">
+        {error && <p className="text-sm text-red-600">API error: {error}</p>}
+        {tokenValid && (
+          <>
+            <ConnectionPanel onStatusChange={() => setRefreshKey((k) => k + 1)} />
+            <CampaignsTable refreshKey={refreshKey} />
+          </>
         )}
       </main>
     </div>

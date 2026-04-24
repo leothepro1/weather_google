@@ -1,3 +1,4 @@
+import type { CampaignListResponse, ConnectionStatus } from '@wbm/shared';
 import { clearToken, getToken } from './auth.js';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
@@ -38,4 +39,24 @@ export interface HealthResponse {
 
 export function getHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>('/health');
+}
+
+export function getConnectionStatus(): Promise<ConnectionStatus> {
+  return apiFetch<ConnectionStatus>('/api/connection/status');
+}
+
+export function disconnectGoogleAds(): Promise<ConnectionStatus> {
+  return apiFetch<ConnectionStatus>('/api/connection', { method: 'DELETE' });
+}
+
+export function getCampaigns(): Promise<CampaignListResponse> {
+  return apiFetch<CampaignListResponse>('/api/campaigns');
+}
+
+// URL for the full-page navigation that kicks off the OAuth flow. Admin
+// token is passed as a query param because a GET navigation can't carry
+// an Authorization header.
+export function googleOAuthStartUrl(): string {
+  const token = getToken() ?? '';
+  return `${BASE_URL}/auth/google/start?token=${encodeURIComponent(token)}`;
 }
