@@ -1,0 +1,116 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033
+{\fonttbl{\f0\fswiss\fcharset0 Helvetica;}{\f1\fmodern\fcharset0 Courier New;}}
+{\colortbl;\red17\green17\blue17;\red85\green85\blue85;\red240\green240\blue240;}
+\viewkind4\uc1
+\pard\sa120\sl276\slmult1\f0\fs22
+
+\pard\sa80\sl288\slmult1\b\fs36 Weather Budget Modifier \endash  Design Documentation\b0\fs22\par
+\pard\sa200\sl276\slmult1\i\cf2 Internal single-user tool for automated Google Ads daily-budget adjustment based on current weather conditions.\i0\cf1\par
+
+\pard\sa80\sl288\slmult1\b\fs28 1. Purpose\b0\fs22\par
+\pard\sa120\sl276\slmult1
+The Weather Budget Modifier (WBM) is an internal tool used by a single operator to automatically adjust the daily budgets of Google Ads campaigns on one advertiser account, based on the current weather at one fixed geographic location. The operator defines rules (\ldblquote buckets\rdblquote ) that map weather conditions to a percentage budget modifier; a daily scheduled job evaluates the rules and applies the resulting budgets via the Google Ads API.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 2. Use case\b0\fs22\par
+\pard\sa120\sl276\slmult1
+For advertisers whose consumer demand correlates with weather \endash  for example, products whose sales rise during specific temperature ranges or conditions \endash  this tool removes the need to adjust daily budgets manually. The operator configures the rules once, and the system applies them automatically every day.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 3. User base\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1\bullet\tab Single operator: the owner of the Google Ads MCC and the advertiser account.\par
+\bullet\tab One advertiser customer ID, managed through one MCC.\par
+\bullet\tab Not multi-tenant. Not exposed to third parties or end users beyond the operator.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 4. Architecture\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b API:\b0  Cloudflare Workers + Hono (TypeScript).\par
+\bullet\tab\b Database:\b0  Cloudflare D1 (SQLite).\par
+\bullet\tab\b Web UI:\b0  React + Vite + TypeScript, hosted on Cloudflare Pages.\par
+\bullet\tab\b Scheduler:\b0  Cloudflare Cron Trigger (daily).\par
+\bullet\tab\b Weather data:\b0  Open-Meteo public API (no auth, no PII).\par
+
+\pard\sa80\sl288\slmult1\b\fs28 5. Data flow\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+1.\tab The operator signs in to the web UI with a single bearer token (ADMIN_TOKEN).\par
+2.\tab One-time setup: the operator clicks \ldblquote Connect Google Ads\rdblquote , which initiates a standard OAuth 2.0 authorization-code flow against accounts.google.com with scope https://www.googleapis.com/auth/adwords. The resulting refresh token is stored in the D1 config table.\par
+3.\tab The operator defines buckets (temperature range + weather conditions + modifier percentage) and assigns campaigns to buckets with explicit priority.\par
+4.\tab A Cloudflare cron trigger fires once every 24 hours and:\par
+\pard\fi-360\li1440\sa60\sl276\slmult1
+\bullet\tab fetches current weather for the configured latitude/longitude from Open-Meteo;\par
+\bullet\tab for each linked campaign, selects the highest-priority bucket whose conditions match;\par
+\bullet\tab computes new_budget = base_budget \'d7 (1 + modifier_pct / 100), where base_budget is the campaign\rquote s budget snapshotted at link time (never the previously-adjusted budget \endash  this prevents compounding drift);\par
+\bullet\tab calls the Google Ads API to update campaign_budget.amount_micros;\par
+\bullet\tab writes the decision (matched bucket, computed budget, API result) to the adjustment_log table.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 6. Google Ads API usage\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b API version:\b0  v23 (REST endpoint https://googleads.googleapis.com/v23/...).\par
+\bullet\tab\b Client:\b0  direct fetch calls \endash  no client library. The Cloudflare Workers runtime constraints make the official Node-based client unsuitable.\par
+\bullet\tab\b Required headers:\b0  Authorization: Bearer <access_token>, developer-token, login-customer-id.\par
+\bullet\tab\b Endpoints used:\b0\par
+\pard\fi-360\li1440\sa60\sl276\slmult1
+\bullet\tab GoogleAdsService.Search (GAQL) \endash  to list campaigns and read their current daily-budget amounts.\par
+\bullet\tab CampaignBudgetService.Mutate \endash  to update campaign_budget.amount_micros on the linked budgets.\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b OAuth scope:\b0  https://www.googleapis.com/auth/adwords.\par
+\bullet\tab\b Customer scope:\b0  a single advertiser customer ID (the operator\rquote s own account) under one MCC.\par
+
+\pard\sa80\sl288\slmult1\b\fs24 Example GAQL query (campaign + budget read)\b0\fs22\par
+\pard\sa120\sl276\slmult1\f1\fs20\cf1\highlight3
+SELECT campaign.id,\line
+\tab   campaign.name,\line
+\tab   campaign.status,\line
+\tab   campaign_budget.amount_micros,\line
+\tab   campaign_budget.resource_name,\line
+\tab   customer.currency_code\line
+FROM   campaign\line
+WHERE  campaign.status != 'REMOVED'\highlight0\f0\fs22\par
+
+\pard\sa80\sl288\slmult1\b\fs28 7. Campaign types supported\b0\fs22\par
+\pard\sa120\sl276\slmult1
+The tool operates on the generic campaign_budget resource and does not filter by campaign type or advertising channel. The supported campaign types are therefore: \b Search, Display, Shopping, Performance Max, Video, Demand Gen, App.\b0\par
+
+\pard\sa80\sl288\slmult1\b\fs28 8. Frequency and request volume\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b List campaigns (cron):\b0  1 \'d7 per day.\par
+\bullet\tab\b List campaigns (UI use):\b0  occasional, on dashboard load \endash  fewer than 20 per day.\par
+\bullet\tab\b Update campaign budgets:\b0  one mutation per linked campaign per cron run \endash  typically fewer than 50 per day.\par
+\pard\sa120\sl276\slmult1
+Total daily volume is well within the Basic Access tier limit of 15,000 operations per day.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 9. Authentication and authorization\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b Operator \rightarrow  Web UI:\b0  single shared bearer token (ADMIN_TOKEN) entered in a login form, stored in localStorage.\par
+\bullet\tab\b Web UI \rightarrow  API:\b0  the same bearer token, sent in the Authorization header. A Hono middleware checks every route except /health.\par
+\bullet\tab\b API \rightarrow  Google Ads:\b0  standard OAuth 2.0 refresh-token flow. The refresh token is written to D1 once during the initial connect step and is exchanged for short-lived access tokens on demand. Access tokens are cached per Worker isolate with a small expiry skew.\par
+\bullet\tab\b OAuth kickoff route:\b0  GET /auth/google/start?token=<ADMIN_TOKEN>. Browser navigations cannot carry an Authorization header, so the admin token is accepted as a query parameter only on this single route. The referrer to accounts.google.com is stripped, so the token does not leak downstream.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 10. Security\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab All Google credentials \endash  OAuth client secret, developer token, refresh token \endash  are stored as Cloudflare Worker secrets or in the D1 config table that lives inside the same trust boundary as the Worker.\par
+\bullet\tab The OAuth state parameter is a 32-byte random token written to D1 under oauth_state:<token> with the issue timestamp; the callback deletes it on read and rejects values older than 10 minutes.\par
+\bullet\tab The refresh token is never exposed to the browser. All Google Ads API calls are made from the Worker.\par
+\bullet\tab HTTPS-only by default (Cloudflare).\par
+\bullet\tab CORS is restricted to a configured WEB_ORIGIN.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 11. Data model (D1 tables)\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab\b config:\b0  single-row key/value store \endash  refresh token, OAuth state nonces, configured weather location.\par
+\bullet\tab\b buckets:\b0  bucket definitions \endash  optional temperature range, weather conditions array, modifier percentage.\par
+\bullet\tab\b campaigns:\b0  local cache of campaigns the operator has linked, with the snapshotted base_budget_micros.\par
+\bullet\tab\b bucket_campaigns:\b0  many-to-many links between buckets and campaigns, with operator-controlled priority.\par
+\bullet\tab\b adjustment_log:\b0  one row per cron decision \endash  campaign, matched bucket, computed budget, API result.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 12. Compliance\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab The operator (also the MCC owner and developer-token applicant) has read and agreed to the Google Ads API Terms of Service.\par
+\bullet\tab No Google Ads data is shared with third parties. All data stays within the operator\rquote s own Cloudflare account.\par
+\bullet\tab Weather data is sourced from Open-Meteo, a public API. No personally identifiable information is sent to it \endash  only latitude and longitude.\par
+\bullet\tab The tool has no end users other than the single operator, so there is no end-user PII collected, stored, or processed.\par
+
+\pard\sa80\sl288\slmult1\b\fs28 13. Failure handling\b0\fs22\par
+\pard\fi-360\li720\sa60\sl276\slmult1
+\bullet\tab If the weather API is unreachable, the cron run aborts and logs the failure to adjustment_log; budgets are left untouched.\par
+\bullet\tab If a Google Ads API call returns a non-2xx response, the response body is captured in the log row for the affected campaign; remaining campaigns are still processed.\par
+\bullet\tab If the refresh token is revoked or expired, all Google Ads calls fail until the operator re-runs the OAuth flow from the dashboard.\par
+
+}
