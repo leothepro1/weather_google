@@ -118,6 +118,22 @@ referrer to `accounts.google.com` is stripped, so the token doesn't leak
 downstream. If this project ever grows beyond a single operator, replace
 with a cookie session.
 
+## 14. Pivot to Google Ads Scripts; existing Worker/web/D1 stack frozen
+
+Because Basic Access for the developer token is required even when the tool
+only touches a single, self-owned advertiser account, and because the
+operator does not need a UI, we are running the actual production workload
+as a Google Ads Script (`ads-script/budget-modifier.gs`) instead of the
+Worker + React + D1 stack. Ads Scripts run inside Google Ads itself, do not
+require a developer token, do not require OAuth verification, and have
+native scheduling — eliminating the entire approval and infra surface for
+this use case. Bucket rules and campaign links live in a linked Google
+Sheet (operator-editable, no redeploys for rule changes). The decisions
+in entries 3, 4, 5, 6, and 7 above carry over verbatim into the Ads Script
+implementation. The Worker/web/D1 code is left in place but no longer the
+target of new work; it can be removed once the Ads Script version has been
+running in production for a while.
+
 ## Process notes
 
 Architect and Claude Code both use explicit **Deviations from spec** headings
