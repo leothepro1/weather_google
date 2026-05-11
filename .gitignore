@@ -1,16 +1,4 @@
-node_modules
-dist
-build
-coverage
-.wrangler
-.vite
 .DS_Store
 *.log
-.env
-.env.local
-.env.*.local
-.dev.vars
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
 .idea
+.vscode/
