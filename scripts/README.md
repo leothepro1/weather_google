@@ -29,7 +29,7 @@ kolumner (rad 1 = rubrik):
 | G   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
 | H   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
 | I   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
-| J   | Naturlig budget     | (auto)  | Scriptets snapshot av din normalbudget. Editera för att överskrida      |
+| J   | Basbudget (SEK)     | number  | **OBLIGATORISK.** Normalnivån — scriptet räknar alltid procent från denna |
 | K   | Senaste åtgärd      | (auto)  | `BOOSTAD` / `SÄNKT` / `NORMAL`                                          |
 | L   | Senast kört         | (auto)  | ISO-tid                                                                 |
 | M   | Senaste temp (°C)   | (auto)  | Senast hämtad temperatur                                                |
@@ -51,7 +51,7 @@ kolumner (rad 1 = rubrik):
   hoppas över.
 - **Positiv justering = höjning, negativ = sänkning.** Inget prefix krävs.
 - **Datumkolumnerna** låter samma kampanj ha olika regler per säsong.
-- **Naturlig budget** sköts av scriptet — se sektion 4.
+- **Basbudget är den enda källan till sanning** — se sektion 4.
 
 ## 2. Hämta API-nyckel
 
@@ -67,30 +67,38 @@ API-nyckel.
 5. När det ser rätt ut: `DRY_RUN = false`, **Auktorisera**, schemalägg
    (t.ex. en gång per timme).
 
-## 4. Återställningslogiken
+## 4. Budgetlogik
 
-Den faktiska Google Ads-budgeten är källan till sanning. Scriptet "äger" bara
-budgeten medan triggern är aktiv:
+`Basbudget` (kolumn J) är **din** källa till sanning. Den sätter du manuellt
+och scriptet räknar alltid från den:
 
-| Tillstånd                                     | Vad scriptet gör                                                               |
-| --------------------------------------------- | ------------------------------------------------------------------------------ |
-| Trigger AV (`temp < tröskel`), tidigare NORMAL | Rör inte budgeten. Skriver `naturlig = nuvarande Google Ads-budget` i sheetet. |
-| Trigger PÅ från NORMAL                         | Sparar nuvarande budget i `Naturlig budget`, sätter ny = `naturlig × (1 + pct/100)`, kapar mot max. |
-| Trigger PÅ, redan boostad/sänkt                | Räknar om från sparad `Naturlig budget` (om du t.ex. har ändrat `pct` i sheetet). |
-| Trigger AV efter att ha varit PÅ               | Återställer till sparad `Naturlig budget`.                                     |
+```
+triggered = tempOk AND weatherOk
+target    = triggered ? basbudget × (1 + pct/100) : basbudget
+applied   = clamp(target, 0.01, min(rowMax, globalMax))
+```
 
-Praktiskt innebär det att du under stilla väder kan ändra budgeten fritt i
-Google Ads — scriptet fångar nya värdet vid nästa körning. När triggern
-sedan aktiveras blir den nya budgeten baseline för procentjusteringen.
+Det betyder:
 
-Vill du tvinga in ett nytt baseline-värde mitt under en aktiv trigger:
-editera kolumn I (`Naturlig budget`) manuellt i sheetet.
+- **Trigger PÅ med `+20`:** budget = `basbudget × 1.20`
+- **Trigger PÅ med `-20`:** budget = `basbudget × 0.80`
+- **Trigger AV:** budget = `basbudget` (alltid återställs)
 
-`adjustPct` får vara negativ. Exempel:
+Procentsatsen tillämpas alltid på *Basbudget* — aldrig på en redan modifierad
+budget. Det betyder att flera rader för samma kampanj (t.ex. `+20% vid Sol` och
+`-20% vid Regn`) ger korrekta värden oavsett vilken som triggade senast.
 
-- **Sommarjackor**, tröskel `15`, justering `20`: när det är ≥ 15 °C → höj 20 %.
-- **Vinterjackor**, tröskel `5`, justering `-50`: när det är ≥ 5 °C → sänk 50 %.
-  (Under 5 °C → tillbaka till naturlig budget = full effekt i kallt väder.)
+**Viktigt:** Eftersom scriptet alltid återställer till `Basbudget` när triggern
+är av, kommer manuella ändringar du gör i Google Ads-gränssnittet att skrivas
+över vid nästa körning. Vill du höja din normalbudget från t.ex. 500 → 900,
+uppdatera `Basbudget` i sheetet — inte i Google Ads.
+
+Exempel:
+
+- **Sommarjackor**, tröskel `15`, väder `Sol`, justering `20`, basbudget `500`:
+  Vid ≥ 15 °C och soligt → 600 SEK. Annars → 500 SEK.
+- **Vinterjackor**, tröskel `5`, justering `-50`, basbudget `400`:
+  Vid ≥ 5 °C → 200 SEK. Under 5 °C → 400 SEK (full effekt i kallt väder).
 
 ## 5. Säkerhetsspärrar
 

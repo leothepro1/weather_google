@@ -16,8 +16,9 @@
  *   G: Status               ("Aktiv" / annat → hoppas över)
  *   H: Gäller från          (date, valfri — tom = inget startdatum)
  *   I: Gäller till          (date, valfri — tom = inget slutdatum)
- *   J: Naturlig budget      (auto — scriptets snapshot av normalbudgeten;
- *                            editera manuellt för att överskrida)
+ *   J: Basbudget (SEK)      (number, REQUIRED — "normalnivån", referens som
+ *                            scriptet alltid räknar från. Du sätter denna
+ *                            själv. Vill du ändra natural-nivån: editera här.)
  *   K: Senaste åtgärd       (skrivs av scriptet: BOOSTAD / SÄNKT / NORMAL)
  *   L: Senast kört (ISO)    (skrivs av scriptet)
  *   M: Senaste temp (°C)    (skrivs av scriptet)
@@ -45,7 +46,7 @@ const COL = {
   STATUS: 6,
   DATE_FROM: 7,
   DATE_TO: 8,
-  NATURAL_BUDGET: 9,
+  BASE_BUDGET: 9,
   LAST_ACTION: 10,
   LAST_RUN: 11,
   LAST_TEMP: 12,
@@ -93,8 +94,7 @@ function main() {
     const status = String(row[COL.STATUS] || '').trim();
     const dateFrom = parseDate(row[COL.DATE_FROM]);
     const dateTo = parseDate(row[COL.DATE_TO]);
-    const naturalSaved = Number(row[COL.NATURAL_BUDGET]);
-    const lastAction = String(row[COL.LAST_ACTION] || '').trim();
+    const baseBudget = Number(row[COL.BASE_BUDGET]);
 
     if (status !== 'Aktiv') {
       Logger.log(`Rad ${i + 1}: hoppar (status="${status}")`);
@@ -106,6 +106,10 @@ function main() {
     }
     if (!Number.isFinite(threshold) || !Number.isFinite(adjustPct)) {
       Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering) — hoppar`);
+      continue;
+    }
+    if (!Number.isFinite(baseBudget) || baseBudget <= 0) {
+      Logger.log(`Rad ${i + 1}: ogiltig Basbudget (måste vara > 0) — hoppar`);
       continue;
     }
     if (weatherReq && !getBucketPredicate(weatherReq)) {
@@ -144,22 +148,14 @@ function main() {
     const triggered = tempOk && weatherOk;
 
     const currentBudget = campaign.getBudget().getAmount();
-    const wasModified = lastAction === ACTION_BOOSTED || lastAction === ACTION_REDUCED;
-
-    // Den faktiska Google Ads-budgeten är källan till sanning så länge
-    // scriptet inte har modifierat den — då litar vi på den sparade.
-    const naturalBudget =
-      wasModified && Number.isFinite(naturalSaved) && naturalSaved > 0
-        ? naturalSaved
-        : currentBudget;
 
     let target;
     let action;
     if (triggered && adjustPct !== 0) {
-      target = naturalBudget * (1 + adjustPct / 100);
+      target = baseBudget * (1 + adjustPct / 100);
       action = adjustPct > 0 ? ACTION_BOOSTED : ACTION_REDUCED;
     } else {
-      target = naturalBudget;
+      target = baseBudget;
       action = ACTION_NORMAL;
     }
     const cappedTarget = applyCaps(target, maxBudget);
@@ -174,11 +170,10 @@ function main() {
 
     Logger.log(
       `${campaignName} | ${city} → ${action} | ${trigInfo} | ` +
-        `naturlig ${naturalBudget} → budget ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
+        `bas ${baseBudget} → budget ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
     );
 
     const weatherLabel = `${weather.main} (${weather.description})`;
-    sheet.getRange(i + 1, COL.NATURAL_BUDGET + 1).setValue(naturalBudget);
     sheet.getRange(i + 1, COL.LAST_ACTION + 1).setValue(action);
     sheet.getRange(i + 1, COL.LAST_RUN + 1).setValue(new Date().toISOString());
     sheet.getRange(i + 1, COL.LAST_TEMP + 1).setValue(weather.temp);
