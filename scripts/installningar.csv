@@ -1,0 +1,6 @@
+Kampanjnamn,Stad,Tröskelvärde (°C),Budgethöjning (%),Basbudget (SEK),Maxbudget (SEK),Status,Senaste åtgärd,Senast kört,Senaste temp (°C)
+Sommarjackor,"Stockholm,SE",15,20,500,1000,Aktiv,,,
+Paraplyer,"Göteborg,SE",10,10,300,600,Aktiv,,,
+Solglasögon,"Malmö,SE",18,25,400,900,Aktiv,,,
+Vinterjackor,"Kiruna,SE",-5,30,350,800,Aktiv,,,
+Glass,"Stockholm,SE",22,40,600,1500,Pausad,,,

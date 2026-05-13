@@ -6,7 +6,17 @@ backend eller deploy behövs.
 
 ## 1. Förbered Google Sheet
 
-Skapa ett ark med fliken `Inställningar` och följande kolumner (rad 1 = rubrik):
+**Snabbstart:** Importera den färdiga mallen [`installningar.csv`](./installningar.csv):
+
+1. Gå till <https://sheets.new> → **Arkiv → Importera → Ladda upp**.
+2. Välj `installningar.csv`, importtyp **Ersätt aktuellt ark**, avgränsare **Komma**.
+3. Döp om fliken (nedtill) från `installningar` till `Inställningar` så att den
+   matchar `CONFIG.SHEET_NAME` i scriptet.
+4. Justera/ta bort exempelraderna efter dina kampanjer. Notera att kampanjnamnet
+   i kolumn A måste matcha **exakt** mot kampanjen i Google Ads.
+
+Manuellt alternativ — skapa ett ark med fliken `Inställningar` och följande
+kolumner (rad 1 = rubrik):
 
 | A Kampanjnamn  | B Stad         | C Tröskel (°C) | D Höjning (%) | E Basbudget | F Maxbudget | G Status | H Senaste åtgärd | I Senast kört | J Senaste temp |
 | -------------- | -------------- | -------------- | ------------- | ----------- | ----------- | -------- | ---------------- | ------------- | -------------- |
