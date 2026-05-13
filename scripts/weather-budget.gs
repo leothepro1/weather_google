@@ -25,7 +25,12 @@
  *   N: Senaste väder        (skrivs av scriptet — OWM main + description)
  *
  * Trigger: temp >= tröskel  AND  väder matchar bucket (om angivet).
- * Båda måste vara uppfyllda — väderkravet vinner alltid över temperaturen.
+ *
+ * Flera rader per kampanj: alla aktiva rader för samma kampanj utvärderas, men
+ * endast EN budgetuppdatering görs per kampanj — "first match wins". Den första
+ * raden (uppifrån i sheetet) vars villkor är uppfyllda bestämmer justeringen.
+ * Om ingen rad triggar återställs kampanjen till basbudget. Detta förhindrar
+ * att icke-matchande rader skriver över matchande raders justering.
  */
 
 const CONFIG = {
@@ -82,102 +87,135 @@ function main() {
 
   const campaignIndex = buildCampaignIndex();
   const weatherCache = {};
+  const groups = {};         // campaignName -> [parsedRow, ...]
+  const groupOrder = [];     // preserve campaign order from sheet
 
+  // Pass 1: validera och samla giltiga rader per kampanj.
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const campaignName = String(row[COL.CAMPAIGN] || '').trim();
-    const city = String(row[COL.CITY] || '').trim();
-    const threshold = Number(row[COL.THRESHOLD]);
-    const weatherReq = String(row[COL.WEATHER_REQ] || '').trim();
-    const adjustPct = Number(row[COL.ADJUST_PCT]);
-    const maxBudget = Number(row[COL.MAX_BUDGET]);
-    const status = String(row[COL.STATUS] || '').trim();
-    const dateFrom = parseDate(row[COL.DATE_FROM]);
-    const dateTo = parseDate(row[COL.DATE_TO]);
-    const baseBudget = Number(row[COL.BASE_BUDGET]);
+    const sheetRow = i + 1;
+    const parsed = {
+      sheetRow,
+      campaignName: String(row[COL.CAMPAIGN] || '').trim(),
+      city: String(row[COL.CITY] || '').trim(),
+      threshold: Number(row[COL.THRESHOLD]),
+      weatherReq: String(row[COL.WEATHER_REQ] || '').trim(),
+      adjustPct: Number(row[COL.ADJUST_PCT]),
+      maxBudget: Number(row[COL.MAX_BUDGET]),
+      status: String(row[COL.STATUS] || '').trim(),
+      dateFrom: parseDate(row[COL.DATE_FROM]),
+      dateTo: parseDate(row[COL.DATE_TO]),
+      baseBudget: Number(row[COL.BASE_BUDGET]),
+    };
 
-    if (status !== 'Aktiv') {
-      Logger.log(`Rad ${i + 1}: hoppar (status="${status}")`);
+    if (parsed.status !== 'Aktiv') {
+      Logger.log(`Rad ${sheetRow}: hoppar (status="${parsed.status}")`);
       continue;
     }
-    if (!campaignName || !city) {
-      Logger.log(`Rad ${i + 1}: saknar kampanjnamn eller stad — hoppar`);
+    if (!parsed.campaignName || !parsed.city) {
+      Logger.log(`Rad ${sheetRow}: saknar kampanjnamn eller stad — hoppar`);
       continue;
     }
-    if (!Number.isFinite(threshold) || !Number.isFinite(adjustPct)) {
-      Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering) — hoppar`);
+    if (!Number.isFinite(parsed.threshold) || !Number.isFinite(parsed.adjustPct)) {
+      Logger.log(`Rad ${sheetRow}: ogiltiga tal (tröskel/justering) — hoppar`);
       continue;
     }
-    if (!Number.isFinite(baseBudget) || baseBudget <= 0) {
-      Logger.log(`Rad ${i + 1}: ogiltig Basbudget (måste vara > 0) — hoppar`);
+    if (!Number.isFinite(parsed.baseBudget) || parsed.baseBudget <= 0) {
+      Logger.log(`Rad ${sheetRow}: ogiltig Basbudget (måste vara > 0) — hoppar`);
       continue;
     }
-    if (weatherReq && !getBucketPredicate(weatherReq)) {
+    if (parsed.weatherReq && !getBucketPredicate(parsed.weatherReq)) {
       Logger.log(
-        `Rad ${i + 1}: okänt väderkrav "${weatherReq}". Giltiga: ${Object.keys(WEATHER_BUCKETS).join(', ')} — hoppar`,
+        `Rad ${sheetRow}: okänt väderkrav "${parsed.weatherReq}". Giltiga: ${Object.keys(WEATHER_BUCKETS).join(', ')} — hoppar`,
       );
       continue;
     }
-    if (dateFrom && today < dateFrom) {
-      Logger.log(`Rad ${i + 1}: före perioden (gäller från ${formatDate(dateFrom)}) — hoppar`);
+    if (parsed.dateFrom && today < parsed.dateFrom) {
+      Logger.log(`Rad ${sheetRow}: före perioden (gäller från ${formatDate(parsed.dateFrom)}) — hoppar`);
       continue;
     }
-    if (dateTo && today > dateTo) {
-      Logger.log(`Rad ${i + 1}: efter perioden (gällde till ${formatDate(dateTo)}) — hoppar`);
+    if (parsed.dateTo && today > parsed.dateTo) {
+      Logger.log(`Rad ${sheetRow}: efter perioden (gällde till ${formatDate(parsed.dateTo)}) — hoppar`);
       continue;
     }
 
+    if (!groups[parsed.campaignName]) {
+      groups[parsed.campaignName] = [];
+      groupOrder.push(parsed.campaignName);
+    }
+    groups[parsed.campaignName].push(parsed);
+  }
+
+  // Pass 2: en budgetuppdatering per kampanj. Första triggande raden vinner.
+  for (const campaignName of groupOrder) {
+    const rows = groups[campaignName];
     const campaign = campaignIndex[campaignName];
     if (!campaign) {
       logCampaignMiss(campaignIndex, campaignName);
       continue;
     }
 
-    let weather = weatherCache[city];
-    if (weather === undefined) {
-      weather = fetchWeather(city);
-      weatherCache[city] = weather;
+    const evaluated = [];
+    let chosen = null;
+    for (const r of rows) {
+      let weather = weatherCache[r.city];
+      if (weather === undefined) {
+        weather = fetchWeather(r.city);
+        weatherCache[r.city] = weather;
+      }
+      if (weather === null) {
+        Logger.log(`Rad ${r.sheetRow}: kunde inte hämta väder för ${r.city} — hoppar`);
+        continue;
+      }
+      const tempOk = weather.temp >= r.threshold;
+      const weatherOk = !r.weatherReq || getBucketPredicate(r.weatherReq)(weather.weatherId);
+      const triggered = tempOk && weatherOk && r.adjustPct !== 0;
+      evaluated.push({ row: r, weather, tempOk, weatherOk, triggered });
+      if (triggered && !chosen) chosen = { row: r, weather };
     }
-    if (weather === null) {
-      Logger.log(`Rad ${i + 1}: kunde inte hämta väder för ${city} — hoppar`);
-      continue;
-    }
 
-    const tempOk = weather.temp >= threshold;
-    const weatherOk = !weatherReq || getBucketPredicate(weatherReq)(weather.weatherId);
-    const triggered = tempOk && weatherOk;
+    if (evaluated.length === 0) continue;
 
-    const currentBudget = campaign.getBudget().getAmount();
-
+    const baseBudget = evaluated[0].row.baseBudget;
     let target;
-    let action;
-    if (triggered && adjustPct !== 0) {
-      target = baseBudget * (1 + adjustPct / 100);
-      action = adjustPct > 0 ? ACTION_BOOSTED : ACTION_REDUCED;
+    let campaignAction;
+    if (chosen) {
+      target = chosen.row.baseBudget * (1 + chosen.row.adjustPct / 100);
+      campaignAction = chosen.row.adjustPct > 0 ? ACTION_BOOSTED : ACTION_REDUCED;
     } else {
       target = baseBudget;
-      action = ACTION_NORMAL;
+      campaignAction = ACTION_NORMAL;
     }
-    const cappedTarget = applyCaps(target, maxBudget);
+    const rowMax = chosen ? chosen.row.maxBudget : Infinity;
+    const cappedTarget = applyCaps(target, rowMax);
 
+    const currentBudget = campaign.getBudget().getAmount();
     const changed = Math.abs(currentBudget - cappedTarget) >= 0.01;
     if (changed && !CONFIG.DRY_RUN) {
       campaign.getBudget().setAmount(cappedTarget);
     }
 
-    const trigInfo = `temp ${weather.temp}°C ${tempOk ? '✓' : '✗'} (tröskel ${threshold})` +
-      (weatherReq ? `, väder "${weather.main}" ${weatherOk ? '✓' : '✗'} (krav ${weatherReq})` : '');
-
+    const source = chosen
+      ? `via rad ${chosen.row.sheetRow} (${chosen.row.weatherReq || 'temp'} ${chosen.row.adjustPct > 0 ? '+' : ''}${chosen.row.adjustPct}%)`
+      : 'ingen rad triggade';
     Logger.log(
-      `${campaignName} | ${city} → ${action} | ${trigInfo} | ` +
-        `bas ${baseBudget} → budget ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
+      `${campaignName} → ${campaignAction} ${source} | bas ${baseBudget} → ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
     );
 
-    const weatherLabel = `${weather.main} (${weather.description})`;
-    sheet.getRange(i + 1, COL.LAST_ACTION + 1).setValue(action);
-    sheet.getRange(i + 1, COL.LAST_RUN + 1).setValue(new Date().toISOString());
-    sheet.getRange(i + 1, COL.LAST_TEMP + 1).setValue(weather.temp);
-    sheet.getRange(i + 1, COL.LAST_WEATHER + 1).setValue(weatherLabel);
+    const nowIso = new Date().toISOString();
+    for (const e of evaluated) {
+      const rowAction = e.triggered
+        ? (e.row.adjustPct > 0 ? ACTION_BOOSTED : ACTION_REDUCED)
+        : ACTION_NORMAL;
+      const trigInfo = `temp ${e.weather.temp}°C ${e.tempOk ? '✓' : '✗'} (tröskel ${e.row.threshold})` +
+        (e.row.weatherReq ? `, väder "${e.weather.main}" ${e.weatherOk ? '✓' : '✗'} (krav ${e.row.weatherReq})` : '');
+      Logger.log(`  Rad ${e.row.sheetRow}: ${rowAction} | ${trigInfo}`);
+      const weatherLabel = `${e.weather.main} (${e.weather.description})`;
+      sheet.getRange(e.row.sheetRow, COL.LAST_ACTION + 1).setValue(rowAction);
+      sheet.getRange(e.row.sheetRow, COL.LAST_RUN + 1).setValue(nowIso);
+      sheet.getRange(e.row.sheetRow, COL.LAST_TEMP + 1).setValue(e.weather.temp);
+      sheet.getRange(e.row.sheetRow, COL.LAST_WEATHER + 1).setValue(weatherLabel);
+    }
   }
 }
 
