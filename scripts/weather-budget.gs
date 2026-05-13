@@ -175,18 +175,49 @@ function formatDate(d) {
 
 function buildCampaignIndex() {
   const index = {};
-  const iterator = AdsApp.campaigns().get();
-  while (iterator.hasNext()) {
-    const c = iterator.next();
-    index[c.getName()] = c;
+  const selectors = [
+    AdsApp.campaigns(),
+    AdsApp.shoppingCampaigns(),
+    AdsApp.videoCampaigns(),
+    AdsApp.performanceMaxCampaigns(),
+  ];
+  for (const selector of selectors) {
+    try {
+      const iterator = selector.get();
+      while (iterator.hasNext()) {
+        const c = iterator.next();
+        index[c.getName()] = c;
+      }
+    } catch (e) {
+      // Vissa konton har inte tillgång till alla kampanjtyper — hoppa över tyst.
+    }
   }
   return index;
+}
+
+/**
+ * Diagnostik-funktion: kör denna separat från scripteditorn för att se
+ * exakt vilka kampanjnamn Google Ads Scripts hittar. Loggen visar varje
+ * namn omgivet av citationstecken så att osynliga tecken (mellanslag,
+ * en-dash vs hyphen, etc.) blir synliga.
+ */
+function listCampaigns() {
+  const index = buildCampaignIndex();
+  const names = Object.keys(index).sort();
+  Logger.log(`Hittade ${names.length} kampanjer:`);
+  for (const name of names) {
+    Logger.log(`  "${name}" (längd ${name.length})`);
+  }
 }
 
 function setCampaignBudget(campaignIndex, campaignName, newAmount) {
   const campaign = campaignIndex[campaignName];
   if (!campaign) {
-    Logger.log(`Hittade ingen kampanj med namn "${campaignName}"`);
+    const available = Object.keys(campaignIndex);
+    const hint = available.length === 0
+      ? 'inga kampanjer hittades i kontot — fel konto vald?'
+      : `${available.length} kampanjer i kontot; första: "${available.slice(0, 5).join('", "')}"`;
+    Logger.log(`Hittade ingen kampanj med namn "${campaignName}" (längd ${campaignName.length}). ${hint}`);
     return { previous: null, applied: null, changed: false };
   }
 
