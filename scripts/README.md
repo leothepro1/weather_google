@@ -22,22 +22,35 @@ kolumner (rad 1 = rubrik):
 | --- | ------------------- | ------- | ----------------------------------------------------------------------- |
 | A   | Kampanjnamn         | text    | Måste matcha **exakt** mot kampanjen i Google Ads                       |
 | B   | Stad                | text    | OpenWeatherMap-format, t.ex. `Stockholm,SE`                             |
-| C   | Tröskelvärde (°C)   | number  | Justeringen aktiveras när `temp >= tröskel`                             |
-| D   | Budgetjustering (%) | number  | `20` = höj 20 %, `-20` = sänk 20 %, `0` = ingen ändring                 |
-| E   | Maxbudget (SEK)     | number  | Rad-specifikt säkerhetstak (lägsta av detta och globalt tak vinner)     |
-| F   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
-| G   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
-| H   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
-| I   | Naturlig budget     | (auto)  | Scriptets snapshot av din normalbudget. Editera för att överskrida      |
-| J   | Senaste åtgärd      | (auto)  | `BOOSTAD` / `SÄNKT` / `NORMAL`                                          |
-| K   | Senast kört         | (auto)  | ISO-tid                                                                 |
-| L   | Senaste temp (°C)   | (auto)  | Senast hämtad temperatur                                                |
+| C   | Tröskelvärde (°C)   | number  | Temperaturvillkor: utlöses när `temp >= tröskel`                        |
+| D   | Väderkrav           | text    | Valfri vädervillkor (bucket). Tom = bara temperaturen avgör.            |
+| E   | Budgetjustering (%) | number  | `20` = höj 20 %, `-20` = sänk 20 %, `0` = ingen ändring                 |
+| F   | Maxbudget (SEK)     | number  | Rad-specifikt säkerhetstak (lägsta av detta och globalt tak vinner)     |
+| G   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
+| H   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
+| I   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
+| J   | Naturlig budget     | (auto)  | Scriptets snapshot av din normalbudget. Editera för att överskrida      |
+| K   | Senaste åtgärd      | (auto)  | `BOOSTAD` / `SÄNKT` / `NORMAL`                                          |
+| L   | Senast kört         | (auto)  | ISO-tid                                                                 |
+| M   | Senaste temp (°C)   | (auto)  | Senast hämtad temperatur                                                |
+| N   | Senaste väder       | (auto)  | T.ex. `Clouds (broken clouds)` — vad OWM rapporterade                   |
 
-- **Positiv justering = höjning, negativ = sänkning.** Inget prefix krävs (`20`
-  räcker), men `+20` funkar också.
-- **Datumkolumnerna** låter samma kampanj ha olika regler per säsong: skapa en
-  rad för "Vinterjackor" som gäller nov–mar och en annan rad för samma kampanj
-  som gäller apr–okt med andra trösklar. Tomma datum = gäller alltid.
+- **Trigger-villkoret är AND** mellan temp och väder. Om båda anges måste båda
+  uppfyllas. Tomt `Väderkrav` = bara temperaturen räknas (bakåtkompatibelt).
+- **Väder-buckets (kolumn D):**
+
+  | Bucket     | Matchar (OpenWeatherMap)                       |
+  | ---------- | ---------------------------------------------- |
+  | `Sol`      | Klart väder, lätt molnighet (id 800, 801)      |
+  | `Molnigt`  | Spridda → heltäckta moln (id 802–804)          |
+  | `Regnigt`  | Regn, dugg, åska (id 200–599)                  |
+  | `Snö`      | All snö (id 600–699)                           |
+  | `Dimma`    | Dimma, dis, rök (id 700–799)                   |
+
+  Case-insensitive — `sol` = `Sol` = `SOL`. Felstavning loggas och raden
+  hoppas över.
+- **Positiv justering = höjning, negativ = sänkning.** Inget prefix krävs.
+- **Datumkolumnerna** låter samma kampanj ha olika regler per säsong.
 - **Naturlig budget** sköts av scriptet — se sektion 4.
 
 ## 2. Hämta API-nyckel

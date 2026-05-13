@@ -9,26 +9,22 @@
  *   A: Kampanjnamn          (string, måste matcha exakt i Google Ads)
  *   B: Stad                 (string, t.ex. "Stockholm,SE")
  *   C: Tröskelvärde (°C)    (number, justera budget när temp >= detta värde)
- *   D: Budgetjustering (%)  (number, +20 = höj 20 %, -20 = sänk 20 %, 0 = ingen)
- *   E: Maxbudget (SEK)      (number, säkerhetstak — budget får aldrig överstiga detta)
- *   F: Status               ("Aktiv" / annat → hoppas över)
- *   G: Gäller från          (date, valfri — tom = inget startdatum)
- *   H: Gäller till          (date, valfri — tom = inget slutdatum)
- *   I: Naturlig budget      (auto — scriptet sparar din normalbudget här när
- *                            triggern aktiveras, så att den kan återställas
- *                            när triggern upphör. Editera manuellt för att
- *                            överskrida; töm för att låta scriptet om-fånga.)
- *   J: Senaste åtgärd       (skrivs av scriptet: BOOSTAD / SÄNKT / NORMAL)
- *   K: Senast kört (ISO)    (skrivs av scriptet)
- *   L: Senaste temp (°C)    (skrivs av scriptet)
+ *   D: Väderkrav            (text, valfri — t.ex. "Sol". Tom = ingen vädervillkor.
+ *                            Giltiga: Sol, Molnigt, Regnigt, Snö, Dimma)
+ *   E: Budgetjustering (%)  (number, +20 = höj 20 %, -20 = sänk 20 %, 0 = ingen)
+ *   F: Maxbudget (SEK)      (number, säkerhetstak — budget får aldrig överstiga detta)
+ *   G: Status               ("Aktiv" / annat → hoppas över)
+ *   H: Gäller från          (date, valfri — tom = inget startdatum)
+ *   I: Gäller till          (date, valfri — tom = inget slutdatum)
+ *   J: Naturlig budget      (auto — scriptets snapshot av normalbudgeten;
+ *                            editera manuellt för att överskrida)
+ *   K: Senaste åtgärd       (skrivs av scriptet: BOOSTAD / SÄNKT / NORMAL)
+ *   L: Senast kört (ISO)    (skrivs av scriptet)
+ *   M: Senaste temp (°C)    (skrivs av scriptet)
+ *   N: Senaste väder        (skrivs av scriptet — OWM main + description)
  *
- * Beteende:
- *   - Trigger AV (temp < tröskel): scriptet rör inte budgeten. Du kan ändra
- *     den fritt i Google Ads, scriptet fångar nya värdet vid nästa körning.
- *   - Trigger PÅ (temp >= tröskel): scriptet sparar nuvarande budget som
- *     "Naturlig budget" och sätter ny = naturlig × (1 + justering/100), med
- *     tak från Maxbudget och CONFIG.GLOBAL_MAX_BUDGET_SEK.
- *   - Trigger upphör: scriptet återställer till sparad "Naturlig budget".
+ * Trigger: temp >= tröskel  AND  väder matchar bucket (om angivet).
+ * Båda måste vara uppfyllda — väderkravet vinner alltid över temperaturen.
  */
 
 const CONFIG = {
@@ -43,20 +39,32 @@ const COL = {
   CAMPAIGN: 0,
   CITY: 1,
   THRESHOLD: 2,
-  ADJUST_PCT: 3,
-  MAX_BUDGET: 4,
-  STATUS: 5,
-  DATE_FROM: 6,
-  DATE_TO: 7,
-  NATURAL_BUDGET: 8,
-  LAST_ACTION: 9,
-  LAST_RUN: 10,
-  LAST_TEMP: 11,
+  WEATHER_REQ: 3,
+  ADJUST_PCT: 4,
+  MAX_BUDGET: 5,
+  STATUS: 6,
+  DATE_FROM: 7,
+  DATE_TO: 8,
+  NATURAL_BUDGET: 9,
+  LAST_ACTION: 10,
+  LAST_RUN: 11,
+  LAST_TEMP: 12,
+  LAST_WEATHER: 13,
 };
 
 const ACTION_BOOSTED = 'BOOSTAD';
 const ACTION_REDUCED = 'SÄNKT';
 const ACTION_NORMAL = 'NORMAL';
+
+// Mappning mellan användarvänliga bucket-namn och OpenWeatherMap condition codes.
+// Se https://openweathermap.org/weather-conditions för fullständig lista.
+const WEATHER_BUCKETS = {
+  sol:     (id) => id === 800 || id === 801,           // clear, few clouds
+  molnigt: (id) => id >= 802 && id <= 804,             // scattered/broken/overcast
+  regnigt: (id) => id >= 200 && id <= 599,             // åska, dugg, regn
+  'snö':   (id) => id >= 600 && id <= 699,
+  dimma:   (id) => id >= 700 && id <= 799,             // dimma, dis, rök
+};
 
 function main() {
   const sheet = SpreadsheetApp.openByUrl(CONFIG.SPREADSHEET_URL).getSheetByName(CONFIG.SHEET_NAME);
@@ -79,6 +87,7 @@ function main() {
     const campaignName = String(row[COL.CAMPAIGN] || '').trim();
     const city = String(row[COL.CITY] || '').trim();
     const threshold = Number(row[COL.THRESHOLD]);
+    const weatherReq = String(row[COL.WEATHER_REQ] || '').trim();
     const adjustPct = Number(row[COL.ADJUST_PCT]);
     const maxBudget = Number(row[COL.MAX_BUDGET]);
     const status = String(row[COL.STATUS] || '').trim();
@@ -99,6 +108,12 @@ function main() {
       Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering) — hoppar`);
       continue;
     }
+    if (weatherReq && !getBucketPredicate(weatherReq)) {
+      Logger.log(
+        `Rad ${i + 1}: okänt väderkrav "${weatherReq}". Giltiga: ${Object.keys(WEATHER_BUCKETS).join(', ')} — hoppar`,
+      );
+      continue;
+    }
     if (dateFrom && today < dateFrom) {
       Logger.log(`Rad ${i + 1}: före perioden (gäller från ${formatDate(dateFrom)}) — hoppar`);
       continue;
@@ -114,15 +129,19 @@ function main() {
       continue;
     }
 
-    let temp = weatherCache[city];
-    if (temp === undefined) {
-      temp = fetchTemperature(city);
-      weatherCache[city] = temp;
+    let weather = weatherCache[city];
+    if (weather === undefined) {
+      weather = fetchWeather(city);
+      weatherCache[city] = weather;
     }
-    if (temp === null) {
+    if (weather === null) {
       Logger.log(`Rad ${i + 1}: kunde inte hämta väder för ${city} — hoppar`);
       continue;
     }
+
+    const tempOk = weather.temp >= threshold;
+    const weatherOk = !weatherReq || getBucketPredicate(weatherReq)(weather.weatherId);
+    const triggered = tempOk && weatherOk;
 
     const currentBudget = campaign.getBudget().getAmount();
     const wasModified = lastAction === ACTION_BOOSTED || lastAction === ACTION_REDUCED;
@@ -134,7 +153,6 @@ function main() {
         ? naturalSaved
         : currentBudget;
 
-    const triggered = temp >= threshold;
     let target;
     let action;
     if (triggered && adjustPct !== 0) {
@@ -151,19 +169,29 @@ function main() {
       campaign.getBudget().setAmount(cappedTarget);
     }
 
+    const trigInfo = `temp ${weather.temp}°C ${tempOk ? '✓' : '✗'} (tröskel ${threshold})` +
+      (weatherReq ? `, väder "${weather.main}" ${weatherOk ? '✓' : '✗'} (krav ${weatherReq})` : '');
+
     Logger.log(
-      `${campaignName} | ${city} ${temp}°C (tröskel ${threshold}, justering ${adjustPct}%) → ${action} | ` +
+      `${campaignName} | ${city} → ${action} | ${trigInfo} | ` +
         `naturlig ${naturalBudget} → budget ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
     );
 
+    const weatherLabel = `${weather.main} (${weather.description})`;
     sheet.getRange(i + 1, COL.NATURAL_BUDGET + 1).setValue(naturalBudget);
     sheet.getRange(i + 1, COL.LAST_ACTION + 1).setValue(action);
     sheet.getRange(i + 1, COL.LAST_RUN + 1).setValue(new Date().toISOString());
-    sheet.getRange(i + 1, COL.LAST_TEMP + 1).setValue(temp);
+    sheet.getRange(i + 1, COL.LAST_TEMP + 1).setValue(weather.temp);
+    sheet.getRange(i + 1, COL.LAST_WEATHER + 1).setValue(weatherLabel);
   }
 }
 
-function fetchTemperature(city) {
+function getBucketPredicate(bucketName) {
+  const normalized = String(bucketName).trim().toLowerCase();
+  return WEATHER_BUCKETS[normalized] || null;
+}
+
+function fetchWeather(city) {
   const url =
     'https://api.openweathermap.org/data/2.5/weather' +
     `?q=${encodeURIComponent(city)}&appid=${CONFIG.API_KEY}&units=metric`;
@@ -177,7 +205,17 @@ function fetchTemperature(city) {
     }
     const data = JSON.parse(response.getContentText());
     const temp = Number(data && data.main && data.main.temp);
-    return Number.isFinite(temp) ? temp : null;
+    const w = data && Array.isArray(data.weather) && data.weather[0];
+    if (!Number.isFinite(temp) || !w || !Number.isFinite(Number(w.id))) {
+      Logger.log(`Oväntat väder-svar för ${city}: ${response.getContentText()}`);
+      return null;
+    }
+    return {
+      temp,
+      weatherId: Number(w.id),
+      main: String(w.main || ''),
+      description: String(w.description || ''),
+    };
   } catch (e) {
     Logger.log(`Väder-fetch misslyckades för ${city}: ${e}`);
     return null;

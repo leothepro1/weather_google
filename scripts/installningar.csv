@@ -1,6 +1,6 @@
-Kampanjnamn,Stad,Tröskelvärde (°C),Budgetjustering (%),Maxbudget (SEK),Status,Gäller från,Gäller till,Naturlig budget,Senaste åtgärd,Senast kört,Senaste temp (°C)
-Sommarjackor,"Stockholm,SE",15,20,1000,Aktiv,2026-05-01,2026-09-30,,,,
-Paraplyer,"Göteborg,SE",10,10,600,Aktiv,2026-04-01,2026-10-31,,,,
-Solglasögon,"Malmö,SE",18,25,900,Aktiv,2026-04-01,2026-09-30,,,,
-Vinterjackor,"Kiruna,SE",5,-50,800,Aktiv,2026-11-01,2027-03-31,,,,
-Glass,"Stockholm,SE",22,40,1500,Aktiv,2026-06-01,2026-08-31,,,,
+Kampanjnamn,Stad,Tröskelvärde (°C),Väderkrav,Budgetjustering (%),Maxbudget (SEK),Status,Gäller från,Gäller till,Naturlig budget,Senaste åtgärd,Senast kört,Senaste temp (°C),Senaste väder
+Sommarjackor,"Stockholm,SE",15,Sol,20,1000,Aktiv,2026-05-01,2026-09-30,,,,,
+Paraplyer,"Göteborg,SE",10,Regnigt,10,600,Aktiv,2026-04-01,2026-10-31,,,,,
+Solglasögon,"Malmö,SE",18,Sol,25,900,Aktiv,2026-04-01,2026-09-30,,,,,
+Vinterjackor,"Kiruna,SE",5,,-50,800,Aktiv,2026-11-01,2027-03-31,,,,,
+Glass,"Stockholm,SE",22,Sol,40,1500,Aktiv,2026-06-01,2026-08-31,,,,,
