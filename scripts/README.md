@@ -23,22 +23,22 @@ kolumner (rad 1 = rubrik):
 | A   | Kampanjnamn         | text    | Måste matcha **exakt** mot kampanjen i Google Ads                       |
 | B   | Stad                | text    | OpenWeatherMap-format, t.ex. `Stockholm,SE`                             |
 | C   | Tröskelvärde (°C)   | number  | Justeringen aktiveras när `temp >= tröskel`                             |
-| D   | Budgetjustering (%) | number  | `+20` = höj 20 %, `-20` = sänk 20 %, `0` = ingen ändring                |
-| E   | Basbudget (SEK)     | number  | "Normalnivå" — referens som scriptet alltid räknar från                 |
-| F   | Maxbudget (SEK)     | number  | Rad-specifikt säkerhetstak (lägsta av detta och globalt tak vinner)     |
-| G   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
-| H   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
-| I   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
-| J   | Senaste åtgärd      | (auto)  | Skrivs av scriptet: `BOOSTAD` / `SÄNKT` / `NORMAL`                      |
-| K   | Senast kört         | (auto)  | Skrivs av scriptet (ISO-tid)                                            |
-| L   | Senaste temp (°C)   | (auto)  | Skrivs av scriptet                                                      |
+| D   | Budgetjustering (%) | number  | `20` = höj 20 %, `-20` = sänk 20 %, `0` = ingen ändring                 |
+| E   | Maxbudget (SEK)     | number  | Rad-specifikt säkerhetstak (lägsta av detta och globalt tak vinner)     |
+| F   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
+| G   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
+| H   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
+| I   | Naturlig budget     | (auto)  | Scriptets snapshot av din normalbudget. Editera för att överskrida      |
+| J   | Senaste åtgärd      | (auto)  | `BOOSTAD` / `SÄNKT` / `NORMAL`                                          |
+| K   | Senast kört         | (auto)  | ISO-tid                                                                 |
+| L   | Senaste temp (°C)   | (auto)  | Senast hämtad temperatur                                                |
 
-- **Basbudget** är "normalnivån" — scriptet återställer alltid hit när tröskeln
-  inte är uppfylld, så vi undviker att budgeten driver uppåt mellan körningar.
+- **Positiv justering = höjning, negativ = sänkning.** Inget prefix krävs (`20`
+  räcker), men `+20` funkar också.
 - **Datumkolumnerna** låter samma kampanj ha olika regler per säsong: skapa en
   rad för "Vinterjackor" som gäller nov–mar och en annan rad för samma kampanj
   som gäller apr–okt med andra trösklar. Tomma datum = gäller alltid.
-- Kolumn J–L skrivs av scriptet vid varje körning — rör inte dem manuellt.
+- **Naturlig budget** sköts av scriptet — se sektion 4.
 
 ## 2. Hämta API-nyckel
 
@@ -54,25 +54,30 @@ API-nyckel.
 5. När det ser rätt ut: `DRY_RUN = false`, **Auktorisera**, schemalägg
    (t.ex. en gång per timme).
 
-## 4. Återställningslogiken (det som saknades i utkastet)
+## 4. Återställningslogiken
 
-Varje körning räknar scriptet om budgeten från **basbudgeten i Sheetet**:
+Den faktiska Google Ads-budgeten är källan till sanning. Scriptet "äger" bara
+budgeten medan triggern är aktiv:
 
-```
-triggered     = temp >= threshold
-desiredBudget = triggered ? base × (1 + adjustPct/100) : base
-applied       = clamp(desiredBudget, 0.01, min(rowMax, globalMax))
-```
+| Tillstånd                                     | Vad scriptet gör                                                               |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Trigger AV (`temp < tröskel`), tidigare NORMAL | Rör inte budgeten. Skriver `naturlig = nuvarande Google Ads-budget` i sheetet. |
+| Trigger PÅ från NORMAL                         | Sparar nuvarande budget i `Naturlig budget`, sätter ny = `naturlig × (1 + pct/100)`, kapar mot max. |
+| Trigger PÅ, redan boostad/sänkt                | Räknar om från sparad `Naturlig budget` (om du t.ex. har ändrat `pct` i sheetet). |
+| Trigger AV efter att ha varit PÅ               | Återställer till sparad `Naturlig budget`.                                     |
 
-Eftersom vi alltid utgår från basbudgeten — inte den senast satta budgeten —
-driver budgeten aldrig uppåt vid upprepade körningar, och faller tillbaka
-till `base` automatiskt så fort temperaturen sjunker under tröskeln.
+Praktiskt innebär det att du under stilla väder kan ändra budgeten fritt i
+Google Ads — scriptet fångar nya värdet vid nästa körning. När triggern
+sedan aktiveras blir den nya budgeten baseline för procentjusteringen.
+
+Vill du tvinga in ett nytt baseline-värde mitt under en aktiv trigger:
+editera kolumn I (`Naturlig budget`) manuellt i sheetet.
 
 `adjustPct` får vara negativ. Exempel:
 
-- **Sommarjackor**, tröskel `15`, justering `+20`: när det är ≥ 15 °C → höj 20 %.
+- **Sommarjackor**, tröskel `15`, justering `20`: när det är ≥ 15 °C → höj 20 %.
 - **Vinterjackor**, tröskel `5`, justering `-50`: när det är ≥ 5 °C → sänk 50 %.
-  (Under 5 °C → tillbaka till basbudgeten = full effekt i kallt väder.)
+  (Under 5 °C → tillbaka till naturlig budget = full effekt i kallt väder.)
 
 ## 5. Säkerhetsspärrar
 

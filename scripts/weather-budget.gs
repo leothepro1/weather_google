@@ -9,15 +9,26 @@
  *   A: Kampanjnamn          (string, måste matcha exakt i Google Ads)
  *   B: Stad                 (string, t.ex. "Stockholm,SE")
  *   C: Tröskelvärde (°C)    (number, justera budget när temp >= detta värde)
- *   D: Budgetjustering (%)  (number, +20 = höj 20 %, -20 = sänk 20 %)
- *   E: Basbudget (SEK)      (number, "normalnivån" — referens för upp/ner)
- *   F: Maxbudget (SEK)      (number, säkerhetstak — budget får aldrig överstiga detta)
- *   G: Status               ("Aktiv" / annat → hoppas över)
- *   H: Gäller från          (date, valfri — tom = inget startdatum)
- *   I: Gäller till          (date, valfri — tom = inget slutdatum)
+ *   D: Budgetjustering (%)  (number, +20 = höj 20 %, -20 = sänk 20 %, 0 = ingen)
+ *   E: Maxbudget (SEK)      (number, säkerhetstak — budget får aldrig överstiga detta)
+ *   F: Status               ("Aktiv" / annat → hoppas över)
+ *   G: Gäller från          (date, valfri — tom = inget startdatum)
+ *   H: Gäller till          (date, valfri — tom = inget slutdatum)
+ *   I: Naturlig budget      (auto — scriptet sparar din normalbudget här när
+ *                            triggern aktiveras, så att den kan återställas
+ *                            när triggern upphör. Editera manuellt för att
+ *                            överskrida; töm för att låta scriptet om-fånga.)
  *   J: Senaste åtgärd       (skrivs av scriptet: BOOSTAD / SÄNKT / NORMAL)
  *   K: Senast kört (ISO)    (skrivs av scriptet)
  *   L: Senaste temp (°C)    (skrivs av scriptet)
+ *
+ * Beteende:
+ *   - Trigger AV (temp < tröskel): scriptet rör inte budgeten. Du kan ändra
+ *     den fritt i Google Ads, scriptet fångar nya värdet vid nästa körning.
+ *   - Trigger PÅ (temp >= tröskel): scriptet sparar nuvarande budget som
+ *     "Naturlig budget" och sätter ny = naturlig × (1 + justering/100), med
+ *     tak från Maxbudget och CONFIG.GLOBAL_MAX_BUDGET_SEK.
+ *   - Trigger upphör: scriptet återställer till sparad "Naturlig budget".
  */
 
 const CONFIG = {
@@ -33,15 +44,19 @@ const COL = {
   CITY: 1,
   THRESHOLD: 2,
   ADJUST_PCT: 3,
-  BASE_BUDGET: 4,
-  MAX_BUDGET: 5,
-  STATUS: 6,
-  DATE_FROM: 7,
-  DATE_TO: 8,
+  MAX_BUDGET: 4,
+  STATUS: 5,
+  DATE_FROM: 6,
+  DATE_TO: 7,
+  NATURAL_BUDGET: 8,
   LAST_ACTION: 9,
   LAST_RUN: 10,
   LAST_TEMP: 11,
 };
+
+const ACTION_BOOSTED = 'BOOSTAD';
+const ACTION_REDUCED = 'SÄNKT';
+const ACTION_NORMAL = 'NORMAL';
 
 function main() {
   const sheet = SpreadsheetApp.openByUrl(CONFIG.SPREADSHEET_URL).getSheetByName(CONFIG.SHEET_NAME);
@@ -65,11 +80,12 @@ function main() {
     const city = String(row[COL.CITY] || '').trim();
     const threshold = Number(row[COL.THRESHOLD]);
     const adjustPct = Number(row[COL.ADJUST_PCT]);
-    const baseBudget = Number(row[COL.BASE_BUDGET]);
     const maxBudget = Number(row[COL.MAX_BUDGET]);
     const status = String(row[COL.STATUS] || '').trim();
     const dateFrom = parseDate(row[COL.DATE_FROM]);
     const dateTo = parseDate(row[COL.DATE_TO]);
+    const naturalSaved = Number(row[COL.NATURAL_BUDGET]);
+    const lastAction = String(row[COL.LAST_ACTION] || '').trim();
 
     if (status !== 'Aktiv') {
       Logger.log(`Rad ${i + 1}: hoppar (status="${status}")`);
@@ -79,8 +95,8 @@ function main() {
       Logger.log(`Rad ${i + 1}: saknar kampanjnamn eller stad — hoppar`);
       continue;
     }
-    if (!Number.isFinite(threshold) || !Number.isFinite(adjustPct) || !Number.isFinite(baseBudget) || baseBudget <= 0) {
-      Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering/basbudget) — hoppar`);
+    if (!Number.isFinite(threshold) || !Number.isFinite(adjustPct)) {
+      Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering) — hoppar`);
       continue;
     }
     if (dateFrom && today < dateFrom) {
@@ -89,6 +105,12 @@ function main() {
     }
     if (dateTo && today > dateTo) {
       Logger.log(`Rad ${i + 1}: efter perioden (gällde till ${formatDate(dateTo)}) — hoppar`);
+      continue;
+    }
+
+    const campaign = campaignIndex[campaignName];
+    if (!campaign) {
+      logCampaignMiss(campaignIndex, campaignName);
       continue;
     }
 
@@ -102,22 +124,39 @@ function main() {
       continue;
     }
 
+    const currentBudget = campaign.getBudget().getAmount();
+    const wasModified = lastAction === ACTION_BOOSTED || lastAction === ACTION_REDUCED;
+
+    // Den faktiska Google Ads-budgeten är källan till sanning så länge
+    // scriptet inte har modifierat den — då litar vi på den sparade.
+    const naturalBudget =
+      wasModified && Number.isFinite(naturalSaved) && naturalSaved > 0
+        ? naturalSaved
+        : currentBudget;
+
     const triggered = temp >= threshold;
-    const desiredBudget = triggered ? baseBudget * (1 + adjustPct / 100) : baseBudget;
-    const cappedBudget = applyCaps(desiredBudget, maxBudget);
-
+    let target;
     let action;
-    if (!triggered || adjustPct === 0) action = 'NORMAL';
-    else if (adjustPct > 0) action = 'BOOSTAD';
-    else action = 'SÄNKT';
+    if (triggered && adjustPct !== 0) {
+      target = naturalBudget * (1 + adjustPct / 100);
+      action = adjustPct > 0 ? ACTION_BOOSTED : ACTION_REDUCED;
+    } else {
+      target = naturalBudget;
+      action = ACTION_NORMAL;
+    }
+    const cappedTarget = applyCaps(target, maxBudget);
 
-    const result = setCampaignBudget(campaignIndex, campaignName, cappedBudget);
+    const changed = Math.abs(currentBudget - cappedTarget) >= 0.01;
+    if (changed && !CONFIG.DRY_RUN) {
+      campaign.getBudget().setAmount(cappedTarget);
+    }
 
     Logger.log(
       `${campaignName} | ${city} ${temp}°C (tröskel ${threshold}, justering ${adjustPct}%) → ${action} | ` +
-        `budget ${result.previous} → ${result.applied} SEK${result.changed ? '' : ' (oförändrad)'}`,
+        `naturlig ${naturalBudget} → budget ${currentBudget} → ${cappedTarget} SEK${changed ? '' : ' (oförändrad)'}`,
     );
 
+    sheet.getRange(i + 1, COL.NATURAL_BUDGET + 1).setValue(naturalBudget);
     sheet.getRange(i + 1, COL.LAST_ACTION + 1).setValue(action);
     sheet.getRange(i + 1, COL.LAST_RUN + 1).setValue(new Date().toISOString());
     sheet.getRange(i + 1, COL.LAST_TEMP + 1).setValue(temp);
@@ -195,6 +234,15 @@ function buildCampaignIndex() {
   return index;
 }
 
+function logCampaignMiss(campaignIndex, campaignName) {
+  const available = Object.keys(campaignIndex);
+  const hint =
+    available.length === 0
+      ? 'inga kampanjer hittades i kontot — fel konto valt?'
+      : `${available.length} kampanjer i kontot; första: "${available.slice(0, 5).join('", "')}"`;
+  Logger.log(`Hittade ingen kampanj med namn "${campaignName}" (längd ${campaignName.length}). ${hint}`);
+}
+
 /**
  * Diagnostik-funktion: kör denna separat från scripteditorn för att se
  * exakt vilka kampanjnamn Google Ads Scripts hittar. Loggen visar varje
@@ -208,28 +256,4 @@ function listCampaigns() {
   for (const name of names) {
     Logger.log(`  "${name}" (längd ${name.length})`);
   }
-}
-
-function setCampaignBudget(campaignIndex, campaignName, newAmount) {
-  const campaign = campaignIndex[campaignName];
-  if (!campaign) {
-    const available = Object.keys(campaignIndex);
-    const hint = available.length === 0
-      ? 'inga kampanjer hittades i kontot — fel konto vald?'
-      : `${available.length} kampanjer i kontot; första: "${available.slice(0, 5).join('", "')}"`;
-    Logger.log(`Hittade ingen kampanj med namn "${campaignName}" (längd ${campaignName.length}). ${hint}`);
-    return { previous: null, applied: null, changed: false };
-  }
-
-  const budget = campaign.getBudget();
-  const previous = budget.getAmount();
-
-  if (Math.abs(previous - newAmount) < 0.01) {
-    return { previous, applied: previous, changed: false };
-  }
-
-  if (!CONFIG.DRY_RUN) {
-    budget.setAmount(newAmount);
-  }
-  return { previous, applied: newAmount, changed: true };
 }
