@@ -21,10 +21,9 @@
  */
 
 const CONFIG = {
-  SPREADSHEET_URL: 'DIN_GOOGLE_SHEET_URL_HÄR',
+  SPREADSHEET_URL: 'https://docs.google.com/spreadsheets/d/1VsYi4Vi11CH3rczmOR0xStC2fFnHVuHdNBwBODGZF6M/edit?gid=0#gid=0',
   SHEET_NAME: 'Inställningar',
   API_KEY: 'd064b6fcb97e441ef8e5b639f0beb643',
-  // Hard cap som extra säkerhet utöver kolumn F. Sätt till 0 för att inaktivera.
   GLOBAL_MAX_BUDGET_SEK: 5000,
   DRY_RUN: false, // true = logga bara, ändra inget i Google Ads
 };
