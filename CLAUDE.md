@@ -127,6 +127,31 @@ docs/
 
 ---
 
+## Self-orientation — `docs/` is your memory, not just their dashboard
+
+The artefacts you produce are also the artefacts *you read* on the next
+session. Treat `docs/` as continuity for yourself, not just observability
+for the team. Drift between sessions is the failure mode that ruins
+long-running agentic work — these primitives exist to prevent it.
+
+- **`/recall <module|topic>`** — run *before* changing any module you have
+  not touched in this session, before adding any integration, before
+  touching any contract. Returns a ~150-word brief of what was decided,
+  what shipped, what is open. Do not skip this to save time.
+- **`/audit`** — run when you suspect code and `docs/` have drifted, or
+  when starting work in a part of the codebase that has not been touched
+  recently. Reports orphans and incoherence; does not auto-fix.
+
+The `SessionStart` hook already prints roadmap status, ADR count, and the
+most recent EOD pointer on every session — read it. The `PreCompact` hook
+snapshots state before context is compacted — if you ever feel disoriented
+after compaction, `docs/session-logs/snapshots/` has the breadcrumb.
+
+If you find yourself about to write code without first consulting `/recall`
+on the relevant module, stop. Run `/recall`. Then proceed.
+
+---
+
 ## When the user is ambiguous
 
 If a user prompt is ambiguous about whether something deserves a log entry, ask once. Don't guess. The cost of asking is one sentence. The cost of polluting `docs/` is permanent.
