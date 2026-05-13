@@ -8,14 +8,16 @@
  *
  *   A: Kampanjnamn          (string, måste matcha exakt i Google Ads)
  *   B: Stad                 (string, t.ex. "Stockholm,SE")
- *   C: Tröskelvärde (°C)    (number, höj budget när temp >= detta värde)
- *   D: Budgethöjning (%)    (number, t.ex. 20 = +20 %)
+ *   C: Tröskelvärde (°C)    (number, justera budget när temp >= detta värde)
+ *   D: Budgetjustering (%)  (number, +20 = höj 20 %, -20 = sänk 20 %)
  *   E: Basbudget (SEK)      (number, "normalnivån" — referens för upp/ner)
  *   F: Maxbudget (SEK)      (number, säkerhetstak — budget får aldrig överstiga detta)
  *   G: Status               ("Aktiv" / annat → hoppas över)
- *   H: Senaste åtgärd       (skrivs av scriptet: "BOOSTAD" / "NORMAL")
- *   I: Senast kört (ISO)    (skrivs av scriptet)
- *   J: Senaste temp (°C)    (skrivs av scriptet)
+ *   H: Gäller från          (date, valfri — tom = inget startdatum)
+ *   I: Gäller till          (date, valfri — tom = inget slutdatum)
+ *   J: Senaste åtgärd       (skrivs av scriptet: BOOSTAD / SÄNKT / NORMAL)
+ *   K: Senast kört (ISO)    (skrivs av scriptet)
+ *   L: Senaste temp (°C)    (skrivs av scriptet)
  */
 
 const CONFIG = {
@@ -31,13 +33,15 @@ const COL = {
   CAMPAIGN: 0,
   CITY: 1,
   THRESHOLD: 2,
-  INCREASE_PCT: 3,
+  ADJUST_PCT: 3,
   BASE_BUDGET: 4,
   MAX_BUDGET: 5,
   STATUS: 6,
-  LAST_ACTION: 7,
-  LAST_RUN: 8,
-  LAST_TEMP: 9,
+  DATE_FROM: 7,
+  DATE_TO: 8,
+  LAST_ACTION: 9,
+  LAST_RUN: 10,
+  LAST_TEMP: 11,
 };
 
 function main() {
@@ -50,6 +54,9 @@ function main() {
     return;
   }
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const campaignIndex = buildCampaignIndex();
   const weatherCache = {};
 
@@ -58,10 +65,12 @@ function main() {
     const campaignName = String(row[COL.CAMPAIGN] || '').trim();
     const city = String(row[COL.CITY] || '').trim();
     const threshold = Number(row[COL.THRESHOLD]);
-    const increasePct = Number(row[COL.INCREASE_PCT]);
+    const adjustPct = Number(row[COL.ADJUST_PCT]);
     const baseBudget = Number(row[COL.BASE_BUDGET]);
     const maxBudget = Number(row[COL.MAX_BUDGET]);
     const status = String(row[COL.STATUS] || '').trim();
+    const dateFrom = parseDate(row[COL.DATE_FROM]);
+    const dateTo = parseDate(row[COL.DATE_TO]);
 
     if (status !== 'Aktiv') {
       Logger.log(`Rad ${i + 1}: hoppar (status="${status}")`);
@@ -71,8 +80,16 @@ function main() {
       Logger.log(`Rad ${i + 1}: saknar kampanjnamn eller stad — hoppar`);
       continue;
     }
-    if (!Number.isFinite(threshold) || !Number.isFinite(increasePct) || !Number.isFinite(baseBudget) || baseBudget <= 0) {
-      Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/höjning/basbudget) — hoppar`);
+    if (!Number.isFinite(threshold) || !Number.isFinite(adjustPct) || !Number.isFinite(baseBudget) || baseBudget <= 0) {
+      Logger.log(`Rad ${i + 1}: ogiltiga tal (tröskel/justering/basbudget) — hoppar`);
+      continue;
+    }
+    if (dateFrom && today < dateFrom) {
+      Logger.log(`Rad ${i + 1}: före perioden (gäller från ${formatDate(dateFrom)}) — hoppar`);
+      continue;
+    }
+    if (dateTo && today > dateTo) {
+      Logger.log(`Rad ${i + 1}: efter perioden (gällde till ${formatDate(dateTo)}) — hoppar`);
       continue;
     }
 
@@ -86,15 +103,19 @@ function main() {
       continue;
     }
 
-    const shouldBoost = temp >= threshold;
-    const desiredBudget = shouldBoost ? baseBudget * (1 + increasePct / 100) : baseBudget;
+    const triggered = temp >= threshold;
+    const desiredBudget = triggered ? baseBudget * (1 + adjustPct / 100) : baseBudget;
     const cappedBudget = applyCaps(desiredBudget, maxBudget);
 
+    let action;
+    if (!triggered || adjustPct === 0) action = 'NORMAL';
+    else if (adjustPct > 0) action = 'BOOSTAD';
+    else action = 'SÄNKT';
+
     const result = setCampaignBudget(campaignIndex, campaignName, cappedBudget);
-    const action = shouldBoost ? 'BOOSTAD' : 'NORMAL';
 
     Logger.log(
-      `${campaignName} | ${city} ${temp}°C (tröskel ${threshold}) → ${action} | ` +
+      `${campaignName} | ${city} ${temp}°C (tröskel ${threshold}, justering ${adjustPct}%) → ${action} | ` +
         `budget ${result.previous} → ${result.applied} SEK${result.changed ? '' : ' (oförändrad)'}`,
     );
 
@@ -129,7 +150,28 @@ function applyCaps(desired, rowMax) {
   let capped = desired;
   if (Number.isFinite(rowMax) && rowMax > 0) capped = Math.min(capped, rowMax);
   if (CONFIG.GLOBAL_MAX_BUDGET_SEK > 0) capped = Math.min(capped, CONFIG.GLOBAL_MAX_BUDGET_SEK);
+  capped = Math.max(capped, 0.01); // Google Ads kräver positiv budget
   return Math.round(capped * 100) / 100;
+}
+
+function parseDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  let d;
+  if (value instanceof Date) {
+    d = new Date(value.getTime());
+  } else {
+    d = new Date(String(value).trim());
+  }
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function formatDate(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function buildCampaignIndex() {

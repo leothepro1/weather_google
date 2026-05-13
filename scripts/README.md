@@ -18,18 +18,27 @@ backend eller deploy behövs.
 Manuellt alternativ — skapa ett ark med fliken `Inställningar` och följande
 kolumner (rad 1 = rubrik):
 
-| A Kampanjnamn  | B Stad         | C Tröskel (°C) | D Höjning (%) | E Basbudget | F Maxbudget | G Status | H Senaste åtgärd | I Senast kört | J Senaste temp |
-| -------------- | -------------- | -------------- | ------------- | ----------- | ----------- | -------- | ---------------- | ------------- | -------------- |
-| Sommarjackor   | Stockholm,SE   | 15             | 20            | 500         | 1000        | Aktiv    |                  |               |                |
-| Paraplyer      | Göteborg,SE    | 10             | 10            | 300         | 600         | Aktiv    |                  |               |                |
+| Kol | Rubrik              | Typ     | Innebörd                                                                |
+| --- | ------------------- | ------- | ----------------------------------------------------------------------- |
+| A   | Kampanjnamn         | text    | Måste matcha **exakt** mot kampanjen i Google Ads                       |
+| B   | Stad                | text    | OpenWeatherMap-format, t.ex. `Stockholm,SE`                             |
+| C   | Tröskelvärde (°C)   | number  | Justeringen aktiveras när `temp >= tröskel`                             |
+| D   | Budgetjustering (%) | number  | `+20` = höj 20 %, `-20` = sänk 20 %, `0` = ingen ändring                |
+| E   | Basbudget (SEK)     | number  | "Normalnivå" — referens som scriptet alltid räknar från                 |
+| F   | Maxbudget (SEK)     | number  | Rad-specifikt säkerhetstak (lägsta av detta och globalt tak vinner)     |
+| G   | Status              | text    | `Aktiv` = kör, allt annat = hoppa över                                  |
+| H   | Gäller från         | date    | Valfri. Tom = inget startdatum. Före datum → raden hoppas över          |
+| I   | Gäller till         | date    | Valfri. Tom = inget slutdatum. Efter datum → raden hoppas över          |
+| J   | Senaste åtgärd      | (auto)  | Skrivs av scriptet: `BOOSTAD` / `SÄNKT` / `NORMAL`                      |
+| K   | Senast kört         | (auto)  | Skrivs av scriptet (ISO-tid)                                            |
+| L   | Senaste temp (°C)   | (auto)  | Skrivs av scriptet                                                      |
 
-- **Stad** följer OpenWeatherMap-formatet `Stad,LANDSKOD`.
 - **Basbudget** är "normalnivån" — scriptet återställer alltid hit när tröskeln
   inte är uppfylld, så vi undviker att budgeten driver uppåt mellan körningar.
-- **Maxbudget** är ett rad-specifikt tak; `CONFIG.GLOBAL_MAX_BUDGET_SEK` är ett
-  globalt tak. Det lägsta vinner.
-- Kolumn H–J skrivs av scriptet vid varje körning (verifierbart, ingen ändring
-  i Google Ads krävs för att läsa dem).
+- **Datumkolumnerna** låter samma kampanj ha olika regler per säsong: skapa en
+  rad för "Vinterjackor" som gäller nov–mar och en annan rad för samma kampanj
+  som gäller apr–okt med andra trösklar. Tomma datum = gäller alltid.
+- Kolumn J–L skrivs av scriptet vid varje körning — rör inte dem manuellt.
 
 ## 2. Hämta API-nyckel
 
@@ -50,14 +59,20 @@ API-nyckel.
 Varje körning räknar scriptet om budgeten från **basbudgeten i Sheetet**:
 
 ```
-shouldBoost = temp >= threshold
-desiredBudget = shouldBoost ? base × (1 + pct/100) : base
-applied = min(desiredBudget, rowMax, globalMax)
+triggered     = temp >= threshold
+desiredBudget = triggered ? base × (1 + adjustPct/100) : base
+applied       = clamp(desiredBudget, 0.01, min(rowMax, globalMax))
 ```
 
 Eftersom vi alltid utgår från basbudgeten — inte den senast satta budgeten —
 driver budgeten aldrig uppåt vid upprepade körningar, och faller tillbaka
 till `base` automatiskt så fort temperaturen sjunker under tröskeln.
+
+`adjustPct` får vara negativ. Exempel:
+
+- **Sommarjackor**, tröskel `15`, justering `+20`: när det är ≥ 15 °C → höj 20 %.
+- **Vinterjackor**, tröskel `5`, justering `-50`: när det är ≥ 5 °C → sänk 50 %.
+  (Under 5 °C → tillbaka till basbudgeten = full effekt i kallt väder.)
 
 ## 5. Säkerhetsspärrar
 
