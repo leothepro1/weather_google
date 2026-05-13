@@ -28,32 +28,72 @@ Do **not** try to replicate those. Do **not** write `.md` files directly with th
 
 ---
 
-## The Boris filter — what NOT to log
+## The Boris filter
 
-The benchmark for every potential log entry is: *would Boris Cherny be impressed that this entry exists?* If the answer is anything other than yes, the entry must not exist.
+"Would Boris be impressed?" is vibes. Replace it with a counterfactual test
+that produces the same answer twice in a row.
 
-Do **not** create or update any `.md` for:
+### The rule (apply to every potential entry)
 
-- Styling — padding, colors, typography, spacing, icon swaps, layout tweaks
-- Dependency bumps, lockfile churn, lint config, prettier config, tsconfig tweaks
-- Refactors that preserve behaviour — renames, file moves, extractions, format-only
-- Test-only commits with no new production logic
-- Comment edits, typo fixes, dead-code removal
-- WIP or speculative work that didn't land
-- "Started looking at X" — half-done exploration
+> **Would a competent engineer, reading this entry alone six months from
+> now, take a *different action* because the entry exists?**
 
-When in doubt: don't write. The dashboard tolerates silence. It does not tolerate noise.
+If the answer is no, unclear, or "they'd do the same thing anyway" — do not
+write. Silence is the correct output. The dashboard tolerates silence. It
+does not tolerate noise.
 
----
+### Hard NO — never logged, no exceptions
 
-## What MUST be logged
+- **Visual changes.** Colors, padding, typography, spacing, icons, layout,
+  dark-mode tweaks. *Even if framed as a "bug fix".*
+- **Dependency hygiene.** Bumps inside a major version, lockfile refreshes,
+  audit patches that don't change behaviour.
+- **Config tweaks.** `.prettierrc`, `eslint.config.*`, `tsconfig.json`,
+  `.editorconfig`, VS Code settings, CI YAML formatting.
+- **Behaviour-preserving refactors.** Renames, file moves, function
+  extractions, file splits. If the module's public API is unchanged → no log.
+- **Test-only changes.** Coverage added for behaviour that already shipped.
+  (Tests for *new* behaviour are part of that feature's log, not a separate
+  entry.)
+- **Code hygiene.** Typos, dead-code removal, comment fixes, import order,
+  unused-variable cleanup.
+- **In-session reverts.** If you wrote and reverted X in the same session,
+  neither happened from the log's view.
+- **Investigations without a landing.** "Looked at Redis vs. KeyDB but
+  didn't decide" produces no artefact. If a decision was reached, it's an
+  ADR. If not, nothing.
 
-- New modules or large slices of a module shipped into production
-- External integrations (payment gateways, mail providers, fulfilment, analytics)
-- Breaking API changes (public or internal contract that other modules depend on)
-- Schema migrations, data model changes, anything irreversible without a migration
-- Decisions between alternatives — even when "obvious" in the moment, future-Claude won't see what wasn't chosen unless you write it down
-- Anything you would want a teammate to know if they came back from two weeks of vacation
+### Hard YES — always logged
+
+- New module shipped to production, or the first meaningful slice of one
+- External integration added or removed (payments, mail, storage,
+  analytics, auth, telemetry, queue, search, CDN)
+- Schema migration, data model change, anything irreversible without
+  another migration
+- Breaking change to any contract — public API, internal module interface,
+  env var name, CLI flag, file path consumed by another service
+- Decision between alternatives, *even when one was obvious in the moment*
+  — future-Claude won't see what wasn't picked otherwise
+- Reversal of a previous decision — log it and supersede the prior ADR
+- Performance work where the *cause* matters (N+1, lock contention,
+  cold-start, bundle split). "Added an index, queries got faster" is not
+  loggable; "discovered `orders.customer_id` had no index because migration
+  0042 omitted it" is.
+
+### The pre-publish check
+
+Before saving any `.md`, ask one more question:
+
+> **If I deleted this file tomorrow, would the project be measurably worse
+> off?**
+
+If the answer is "no" or "not sure" — delete it. Do not ship logs you
+wouldn't miss.
+
+The tougher ambiguous cases (CSS bug vs. behaviour bug, partial-vs.-total
+migration, env var renames, etc.) live in the `/log-milestone` and `/adr`
+slash commands, where the rule is actually applied. Read those when you run
+the command.
 
 ---
 
