@@ -2,107 +2,76 @@
 description: "Record an Architecture Decision Record in docs/adr/"
 ---
 
-A decision was made between alternatives. Capture it as an ADR before the
-reasoning evaporates.
+## Run this when
 
-## When to run this command
+A library, framework, or service was chosen over **named** alternatives; a
+tradeoff was settled; a data model or wire format was committed to; a
+pattern was adopted that other modules will follow; an obvious thing was
+deliberately not done.
 
-### Run it if any of these is true
+**Do not run it for:** lint/formatter/test-framework choices that don't
+constrain production behaviour; "we'll do X for now" placeholders;
+one-line library swaps where no alternative was meaningfully considered;
+reaffirming an existing ADR.
 
-- A library, framework, or service was chosen over named alternatives
-- A tradeoff was settled (latency vs. complexity, consistency vs.
-  availability, build-time vs. runtime, monolith vs. split, etc.)
-- A data model, schema shape, or wire format was committed to
-- A pattern was adopted that other modules are now expected to follow
-- An obvious thing was deliberately **not** done, and the reason matters
-  later
-- An earlier ADR is being superseded — reversals always get a new ADR
-
-### Do not run it for
-
-- Styling preferences, naming conventions enforced by lint
-- "We'll do X for now" placeholders that aren't real commitments
-- One-line library swaps where no alternative was meaningfully considered
-- Decisions about test framework, formatter, or other dev-experience tools
-  that don't constrain production behaviour
-- Reaffirming a decision already documented in an existing ADR
-
-### Resolve these without asking
+**Resolve these without asking:**
 
 | Situation | Verdict |
 |---|---|
 | Picked Stripe over Adyen after comparing fees and DX | YES |
-| Picked Stripe because it was the only option considered | NO — not a decision, just a choice |
-| Switched from REST to gRPC for internal service comms | YES — pattern other modules will follow |
-| Used `fetch` instead of `axios` in one new file | NO — local taste, no commitment |
-| Decided checkout will be eventually consistent with inventory | YES — architectural tradeoff |
-| Decided to defer i18n until v2 | YES — explicit non-decision with consequences |
-| Decided to use `zod` for runtime validation across the API | YES — cross-cutting pattern |
-| Decided to put shared types in `packages/shared` | YES if it's the first such decision; NO if it's the third file you've put there |
-| Reverted ADR-0007's "use Redis" in favour of Postgres LISTEN/NOTIFY | YES — new ADR, supersedes 0007 |
-| Picked Tailwind over CSS Modules | NO — dev-experience tool, no production constraint |
+| Picked Stripe because nothing else was considered | NO — not a decision |
+| Switched internal RPC from REST to gRPC | YES — pattern others follow |
+| Used `fetch` over `axios` in one new file | NO — local taste |
+| Checkout becomes eventually consistent with inventory | YES |
+| Deferred i18n until v2 | YES — explicit non-decision with consequences |
+| Adopted `zod` for runtime validation across the API | YES — cross-cutting |
+| Putting first shared types in `packages/shared` | YES (the first time) |
+| Adding the third file to `packages/shared` | NO — pattern already exists |
+| Reversed ADR-0007 in favour of Postgres LISTEN/NOTIFY | YES — supersedes 0007 |
+| Picked Tailwind over CSS Modules | NO — dev-experience tool |
 
 ## Steps
 
-1. Find the next ADR number. Count files matching `docs/adr/[0-9]*.md`, add 1,
-   zero-pad to 4 digits (`0001`, `0002`, …).
-2. Derive a kebab-case slug describing the decision (not the conclusion):
+1. Next ADR number = (count of `docs/adr/[0-9]*.md`) + 1, zero-padded to 4.
+2. Slug describes the **decision area**, not the conclusion:
    `payment-gateway`, not `we-picked-stripe`.
 3. Create `docs/adr/<NNNN>-<slug>.md` with this exact frontmatter:
 
-```yaml
----
-number: NNNN
-date: YYYY-MM-DD
-status: accepted
-supersedes: null     # or "NNNN" if this replaces an earlier ADR
----
-```
+   ```yaml
+   ---
+   number: NNNN
+   date: YYYY-MM-DD
+   status: accepted
+   supersedes: null   # or "NNNN" if this replaces an earlier ADR
+   ---
+   ```
 
-4. Body has exactly four sections, in this order:
+4. Body — exactly these four sections, no others:
+   - `## Context` — what forced the decision. Constraints, what's at stake.
+   - `## Decision` — the choice in one sentence at the top, then
+     justification. Active voice, present tense.
+   - `## Alternatives considered` — bullets. Each names an alternative and
+     gives a one-line rejection reason. Even "obvious" rejections.
+   - `## Consequences` — what becomes easier, what becomes harder, what we
+     now have to maintain. If this section only lists upsides you haven't
+     thought hard enough.
 
-   - `## Context` — what forced the decision. The constraint, the requirement,
-     what's at stake if we get it wrong. Set the scene.
-   - `## Decision` — what we chose. One sentence at the top stating the choice
-     plainly, then justification. Active voice. Present tense.
-   - `## Alternatives considered` — bullet list. Each item names an alternative
-     and gives a one-line rejection reason. Even "obvious" rejections must be
-     written down — future-Claude won't see what wasn't picked otherwise.
-   - `## Consequences` — what becomes easier, what becomes harder, what we've
-     now committed to maintaining. Be honest about the downsides.
-
-5. Append a line to `docs/adr/README.md` (the index):
+5. Append to `docs/adr/README.md`:
    `- [NNNN — <Title>](./NNNN-<slug>.md) — <one-line summary>`
 
-6. If this ADR supersedes an earlier one, edit the older file's frontmatter
-   to `status: superseded` and add `superseded_by: NNNN`. Do not delete the
-   old ADR — superseded reasoning is still valuable history.
+6. If superseding: edit the older ADR's frontmatter to `status: superseded`
+   and `superseded_by: NNNN`. Do not delete the old file.
 
-## Length
+## Pre-save check
 
-200–500 words. ADRs that go longer usually mean two decisions got merged into
-one — split them.
+If this ADR didn't exist, would a future engineer be likely to undo this
+decision by accident, or re-litigate it from scratch? If neither — the
+decision wasn't load-bearing. Don't save. An ADR no one would consult is
+worse than no ADR; it dilutes the signal of the ones that matter.
 
-## The pre-save check
+## Constraints
 
-Before saving, read the draft and answer:
-
-> **If this ADR didn't exist, would a future engineer be likely to undo this
-> decision by accident, or re-litigate it from scratch?**
-
-If "no" to both — the decision wasn't load-bearing. Don't save. An ADR that
-no one would ever consult is worse than no ADR, because it dilutes the
-signal of the ones that matter.
-
-## Quality bar
-
-Three tests, all must pass:
-
-1. **Alternatives are named.** Not "we considered other options" — name them.
-   Even rejected ones future-Claude has never heard of.
-2. **Consequences are honest.** What did we now commit to *maintaining*?
-   What did we make harder for our future selves? If "Consequences" only
-   lists upsides, you haven't thought about it enough.
-3. **Reversible by future ADR, not by silent code change.** This entry
-   should be the kind of decision someone *would* write a new ADR to
-   reverse, not something a refactor could undo without anyone noticing.
+- 200–500 words. Longer usually means two decisions got merged — split them.
+- Alternatives must be **named**, not "we considered other options".
+- The decision should be reversible only by a new ADR, not by silent code
+  change.
